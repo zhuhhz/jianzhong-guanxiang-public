@@ -8,6 +8,8 @@ const sizeLabel = (bytes: number): string => bytes >= 1024 * 1024
 const pixelLabel = (size?: { width?: number; height?: number }): string => size?.width && size.height ? `${size.width} × ${size.height} px` : '';
 const SOURCE_LABELS: Record<NonNullable<ChosenFile['source']>, string> = { 'chat-file': '微信聊天文件', 'chat-image': '微信聊天图片', 'chat-all': '微信聊天', 'chat-open': '聊天直接打开', album: '相册' };
 const PICKER_DIAGNOSTIC = /^source=(chat-file|chat-image|chat-all|album);list=(array|missing|other);count=(0|1|many|unknown);path=(missing|empty|string|other);tempFilePath=(missing|empty|string|other)$/;
+const EMPTY_CHAT_PICKER = /^source=chat-(file|all);list=array;count=0;path=missing;tempFilePath=missing$/;
+const REOPEN_HINT = '请点右上角「…」选择「重新进入小程序」，再选文件。';
 const isPickerError = (code: string) => code === 'NO_FILE_EMPTY_LIST' || code === 'NO_FILE_PATH_MISSING';
 const errorMessage = (error: unknown): string => error instanceof Error ? error.message : '处理失败，请重新选择文件。';
 const errorCode = (error: unknown): string => {
@@ -35,6 +37,19 @@ const previewPoint = (touch?: WechatMiniprogram.TouchDetail | WechatMiniprogram.
   if ([touch.identifier, x, y].every(Number.isFinite)) return { identifier: touch.identifier, x, y, space: 'clientX' in touch ? 'client' : 'canvas' };
 };
 const isTheme = (value: unknown): value is Theme => value === 'ink' || value === 'paper' || value === 'night';
+
+function copyText(data: string, successTitle: string) {
+  if (typeof wx.setClipboardData !== 'function') {
+    wx.showToast({ title: '当前微信不支持复制', icon: 'none' });
+    return;
+  }
+  const fail = () => wx.showToast({ title: '复制失败，请重试', icon: 'none' });
+  try {
+    wx.setClipboardData({ data, success: () => wx.showToast({ title: successTitle, icon: 'success' }), fail });
+  } catch {
+    fail();
+  }
+}
 
 Page({
   data: {
@@ -84,6 +99,7 @@ Page({
     errorCode: '',
     pickerDiagnostic: '',
     canRetryChatFile: false,
+    canRestartPicker: false,
     memoryNotice: '',
     warnings: [] as string[],
     importantWarnings: [] as string[],
@@ -118,6 +134,7 @@ Page({
   jobId: 0,
   disposed: false,
   hidden: false,
+  pendingReadErrorJob: undefined as number | undefined,
   prepareTask: undefined as Promise<PreparedPreview> | undefined,
   prepareExport: undefined as PreparedPreview['prepareExport'],
   exportTask: undefined as Promise<string> | undefined,
@@ -188,8 +205,37 @@ Page({
   reportError(error: unknown) {
     const code = errorCode(error), details = (error as { pickerDiagnostic?: unknown } | null)?.pickerDiagnostic;
     const pickerDiagnostic = isPickerError(code) && typeof details === 'string' && PICKER_DIAGNOSTIC.exec(details)?.[0] === details ? details : '';
-    this.setData({ errorMessage: errorMessage(error), errorCode: code, pickerDiagnostic,
+    const emptyChatPicker = !this.data.hasFile && code === 'NO_FILE_EMPTY_LIST' && EMPTY_CHAT_PICKER.test(pickerDiagnostic);
+    const canRestartPicker = emptyChatPicker && typeof wx.restartMiniProgram === 'function';
+    const message = emptyChatPicker
+      ? `微信未返回所选文件。${canRestartPicker ? '请重新进入小程序后再选。' : REOPEN_HINT}`
+      : errorMessage(error);
+    this.setData({ errorMessage: message, errorCode: code, pickerDiagnostic, canRestartPicker,
       canRetryChatFile: pickerDiagnostic.startsWith('source=chat-all;') });
+  },
+
+  showFileReadError() {
+    if (this.disposed || !this.data.errorMessage) return;
+    const jobId = this.jobId;
+    if (this.hidden) {
+      this.pendingReadErrorJob = jobId;
+      return;
+    }
+    this.pendingReadErrorJob = undefined;
+    const canRestart = this.data.canRestartPicker;
+    try {
+      wx.showModal?.({ title: '无法读取文件', content: this.data.errorMessage,
+        showCancel: canRestart, cancelText: '稍后', confirmText: canRestart ? '重新进入' : '知道了',
+        success: result => {
+          if (canRestart && result.confirm && !this.hidden && jobId === this.jobId) this.restartAfterEmptyPicker();
+        },
+        fail: () => {},
+      });
+    } catch { /* Keep the error and its actions visible on the page if the dialog is unavailable. */ }
+  },
+
+  copyGitHubLink() {
+    copyText('https://github.com/zhuhhz/jianzhong-guanxiang-public', '链接已复制');
   },
 
   copyDiagnostic() {
@@ -210,8 +256,7 @@ Page({
     const picker = isPickerError(code) && PICKER_DIAGNOSTIC.exec(this.data.pickerDiagnostic)?.[0] === this.data.pickerDiagnostic
       ? `\n选择器 ${this.data.pickerDiagnostic}` : '';
     const data = `鉴中观象\n小程序版本 ${appVersion}\n运行版本 ${environment}\n微信版本 ${clientVersion}\n基础库 ${sdkVersion}\n格式 ${format}\n错误码 ${code}${picker}`;
-    wx.setClipboardData({ data, success: () => wx.showToast({ title: '诊断信息已复制', icon: 'success' }),
-      fail: () => wx.showToast({ title: '复制失败，请重试', icon: 'none' }) });
+    copyText(data, '诊断信息已复制');
   },
 
   updateScreenAwake() {
@@ -281,12 +326,16 @@ Page({
       if (this.data.busy) wx.showToast({ title: '请结束当前操作后重新打开 PSD', icon: 'none' });
       else if (chatPsd === 'unavailable') {
         this.reportError(new QuickViewError('CHAT_PSD_UNAVAILABLE', '微信未提供可读取的 PSD 文件，请在聊天中下载后重新打开。'));
+        this.showFileReadError();
       } else {
         void this.chooseFile(chatPsd);
         return;
       }
     }
-    this.offerUpdate();
+    const pendingReadError = this.pendingReadErrorJob === this.jobId;
+    this.pendingReadErrorJob = undefined;
+    if (pendingReadError) this.showFileReadError();
+    else if (chatPsd !== 'unavailable') this.offerUpdate();
     this.publishZoom();
     this.scheduleDetail();
     this.fitPreviewFrame();
@@ -309,6 +358,7 @@ Page({
             this.handlePreviewFailure(path);
             return;
           }
+          if (path !== this.data.previewPath && path !== this.exportPath && path !== this.documentPath) return;
           void this.clearDetail();
           this.exportPath = '';
           this.prepareExport = undefined;
@@ -316,6 +366,7 @@ Page({
           this.setData({ previewPath: '', stageStyle: '', pixelPreview: false, canSave: false, isDocument: false,
             canShareDocument: false,
             errorMessage: '临时预览已失效，请重新选择文件。', errorCode: 'FILE_EXPIRED' });
+          this.showFileReadError();
         },
       });
     }
@@ -382,11 +433,24 @@ Page({
   retryChatFile() { if (this.data.canRetryChatFile && isPickerError(this.data.errorCode)) return this.chooseFile('chat-file'); },
   chooseAlbum() { return this.chooseFile('album'); },
 
+  restartAfterEmptyPicker() {
+    if (!this.data.canRestartPicker || this.data.busy || this.data.hasFile || this.disposed) return;
+    const jobId = this.jobId;
+    this.setData({ canRestartPicker: false });
+    const fail = () => {
+      if (this.disposed || this.jobId !== jobId) return;
+      this.setData({ errorMessage: `微信未能重启小程序。${REOPEN_HINT}` });
+      this.showFileReadError();
+    };
+    try { wx.restartMiniProgram({ path: 'pages/index/index', fail }); } catch { fail(); }
+  },
+
   async chooseFile(input: ImportSource | ChosenFile = 'chat-file') {
     if (this.data.busy || this.disposed) return;
     const fromPicker = typeof input === 'string';
     const jobId = ++this.jobId;
-    this.setData({ busy: true, busyText: fromPicker ? '正在选择文件…' : '正在准备文件…', errorMessage: '', errorCode: '', pickerDiagnostic: '', canRetryChatFile: false });
+    let readFailed = false;
+    this.setData({ busy: true, busyText: fromPicker ? '正在选择文件…' : '正在准备文件…', errorMessage: '', errorCode: '', pickerDiagnostic: '', canRetryChatFile: false, canRestartPicker: false });
     try {
       const file = fromPicker ? await chooseDesignFile(input) : input;
       if (this.disposed || jobId !== this.jobId) return;
@@ -491,10 +555,12 @@ Page({
     } catch (error) {
       if (!this.disposed && jobId === this.jobId && errorMessage(error) !== '已取消选择') {
         this.reportError(error);
+        readFailed = true;
       }
     } finally {
       if (!this.disposed && jobId === this.jobId) {
         this.setData({ busy: false, busyText: '', busyHint: '' });
+        if (readFailed) this.showFileReadError();
         if (this.detailPending) this.scheduleDetail();
       }
     }
@@ -655,7 +721,7 @@ Page({
     this.setData({ hasFile: false, previewBackSessions: [], rawAutoAvailable: false, rawAutoEnabled: false, busy: false, busyText: '', busyHint: '', exportMode: '', filename: '', filesize: '',
       format: '', dimensions: '', colorInfo: '', fileFacts: [], previewPath: '', stageStyle: '', originalImage: '', canRawJpeg: false, canViewRawJpeg: false, rawJpegSize: '', rawJpegInline: false, pixelPreview: false, viewportMounted: true, isDocument: false, canShareDocument: false,
       canSave: false, previewAtOriginalSize: false, canNative: false, nativeState: 'IDLE', nativeProgress: 0,
-      errorMessage: '', errorCode: '', pickerDiagnostic: '', canRetryChatFile: false, memoryNotice: '', warnings: [], importantWarnings: [], previewDetailsOpen: false, previewToolsOpen: false,
+      errorMessage: '', errorCode: '', pickerDiagnostic: '', canRetryChatFile: false, canRestartPicker: false, memoryNotice: '', warnings: [], importantWarnings: [], previewDetailsOpen: false, previewToolsOpen: false,
       zoom: 1, zoomCommand: 1, zoomLabel: '100%' });
     this.updateScreenAwake();
     this.offerUpdate();
@@ -1100,6 +1166,7 @@ Page({
       this.rawInlinePath = ''; // Do not retry a failed native decode on every mode switch.
       this.setData({ previewPath: fallback, rawJpegInline: false,
         errorMessage: `当前微信无法在预览区显示相机高清 JPEG，${fallback ? '已回退概览；' : ''}可尝试全屏查看或保存相机 JPEG。`, errorCode: 'IMAGE_DISPLAY_FAILED' });
+      if (!fallback) this.showFileReadError();
       return;
     }
     if (this.data.format === 'RAW' && this.data.rawAutoEnabled && this.rawOriginalPath) {
@@ -1112,5 +1179,6 @@ Page({
     this.prepareExport = undefined;
     this.setData({ previewPath: '', stageStyle: '', rawJpegInline: false, rawAutoAvailable: false, rawAutoEnabled: false, pixelPreview: false, canSave: false,
       errorMessage: '当前微信无法显示此图像。请检查文件，或升级微信后重试。', errorCode: 'IMAGE_DISPLAY_FAILED' });
+    this.showFileReadError();
   },
 });

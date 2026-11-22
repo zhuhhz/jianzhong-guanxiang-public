@@ -28,6 +28,7 @@ function loadPage(overrides: Record<string, unknown> = {}, wxOverrides: Record<s
   const navigationColors: Record<string, any>[] = [];
   const backgroundColors: Record<string, any>[] = [];
   const toasts: Record<string, any>[] = [];
+  const modals: WechatMiniprogram.ShowModalOption[] = [];
   const platform = {
     chooseDesignFile: async () => selected,
     preparePreview: async () => preview,
@@ -43,6 +44,7 @@ function loadPage(overrides: Record<string, unknown> = {}, wxOverrides: Record<s
   const wx = { nextTick: (callback: () => void) => callback(), canIUse: () => true,
     saveImageToPhotosAlbum: () => {},
     getFileSystemManager: () => ({ access: (options: { fail: () => void }) => { accessFailures.push(options.fail); } }),
+    showModal: (options: WechatMiniprogram.ShowModalOption) => { modals.push(options); },
     ...wxOverrides,
     getStorageSync: (key: string) => {
       storageReads.push(key);
@@ -76,13 +78,13 @@ function loadPage(overrides: Record<string, unknown> = {}, wxOverrides: Record<s
     createSelectorQuery: () => ({ select: () => ({ fields: () => ({ exec: (callback: (results: unknown[]) => void) => callback([{ node: {} }]) }) }) }) };
   for (const [key, value] of Object.entries(page)) if (typeof value === 'function') page[key] = value.bind(page);
   return { page, opened, saved, nativeSaved, updates, accessFailures, storageValues, storageReads, storageWrites,
-    navigationColors, backgroundColors, toasts, cleanups: () => cleanups };
+    navigationColors, backgroundColors, toasts, modals, cleanups: () => cleanups };
 }
 
 test('chat material opens in the normal PSD preview without reopening the file picker', async () => {
   const file = { ...selected, path: 'wxfile://tmp_sample', source: 'chat-open' };
   let pending: typeof file | 'unavailable' | undefined = file, prepared = 0;
-  const { page, toasts } = loadPage({ chooseDesignFile: () => assert.fail('direct open invoked the selector'),
+  const { page, toasts, modals } = loadPage({ chooseDesignFile: () => assert.fail('direct open invoked the selector'),
     preparePreview: async (chosen: unknown) => { assert.equal(chosen, file); prepared++; return preview; } },
   { getApp: () => ({ takeChatPsd: () => { const next = pending; pending = undefined; return next; } }) });
   page.onShow();
@@ -95,6 +97,7 @@ test('chat material opens in the normal PSD preview without reopening the file p
   assert.equal(prepared, 1); assert.match(toasts[toasts.length - 1]?.title, /当前操作/);
   pending = 'unavailable'; page.setData({ busy: false }); page.onShow();
   assert.equal(page.data.errorCode, 'CHAT_PSD_UNAVAILABLE'); assert.equal(page.data.previewPath, preview.previewPath);
+  assert.equal(modals.length, 1); assert.match(modals[0].content ?? '', /微信未提供可读取的 PSD/);
 });
 
 test('sharing always points to the home page with a fixed cover, even during a file preview', () => {
@@ -164,7 +167,7 @@ async function waitFor(predicate: () => boolean, message: string) {
 }
 
 test('canceling selection preserves the current preview without deleting its files', async () => {
-  const { page, cleanups } = loadPage({ chooseDesignFile: async () => { throw new Error('已取消选择'); } });
+  const { page, cleanups, modals } = loadPage({ chooseDesignFile: async () => { throw new Error('已取消选择'); } });
   page.data.hasFile = true;
   page.data.previewPath = '/local/existing.png';
   await page.chooseFile();
@@ -173,16 +176,21 @@ test('canceling selection preserves the current preview without deleting its fil
   assert.equal(page.data.errorMessage, '');
   assert.equal(page.data.busy, false);
   assert.equal(cleanups(), 0);
+  assert.equal(modals.length, 0);
 });
 
 test('real parser errors keep the selected filename and expose an actionable message', async () => {
-  const { page } = loadPage({ preparePreview: async () => { throw new Error('图像尺寸超出限制。'); } });
+  const { page, modals } = loadPage({ preparePreview: async () => { throw new Error('图像尺寸超出限制。'); } });
   await page.chooseFile();
   assert.equal(page.data.filename, selected.name);
   assert.equal(page.data.errorMessage, '图像尺寸超出限制。');
   assert.equal(page.data.previewPath, '');
   assert.equal(page.data.canSave, false);
   assert.equal(page.data.busy, false);
+  assert.equal(modals.length, 1);
+  assert.equal(modals[0].title, '无法读取文件');
+  assert.equal(modals[0].content, page.data.errorMessage);
+  assert.equal(modals[0].showCancel, false);
 });
 
 test('returning home clears the preview without opening a picker and permits a new selection', async () => {
@@ -266,8 +274,18 @@ test('PNG save uses the prepared export and ignores an expired check from the pr
   assert.equal(page.data.errorMessage, '');
 });
 
+test('an expired preview opens one dialog even when multiple access checks fail', async () => {
+  const { page, modals, accessFailures } = loadPage();
+  await page.chooseFile();
+  page.onShow();
+  for (const fail of accessFailures) fail();
+  assert.equal(page.data.errorCode, 'FILE_EXPIRED');
+  assert.equal(modals.length, 1);
+  assert.match(modals[0].content ?? '', /临时预览已失效/);
+});
+
 test('native image errors during busy state are reported while stale image errors are ignored', async () => {
-  const { page } = loadPage();
+  const { page, modals } = loadPage();
   const setData = page.setData;
   page.setData = (update: Record<string, unknown>, callback?: () => void) => {
     setData(update, callback);
@@ -283,6 +301,8 @@ test('native image errors during busy state are reported while stale image error
   page.onPreviewError({ currentTarget: { dataset: { path: '/local/old.png' } } });
   assert.equal(page.data.previewPath, '/local/next.png');
   assert.equal(page.data.errorMessage, '');
+  assert.equal(modals.length, 1);
+  assert.match(modals[0].content ?? '', /无法显示/);
 });
 
 test('only tiny raster previews disable display smoothing while saving the original PNG', async () => {
@@ -1496,6 +1516,27 @@ test('a new original save waits for memory recovery before opening another gener
   assert.equal(generated, 1); assert.deepEqual(nativeSaved, ['/local/after-recovery.png']);
 });
 
+test('the GitHub entry copies the public repository URL and reports the clipboard result', () => {
+  let copied = '';
+  const success = loadPage({}, { setClipboardData: (options: WechatMiniprogram.SetClipboardDataOption) => {
+    copied = options.data;
+    options.success?.({ errMsg: 'setClipboardData:ok' });
+  } });
+  success.page.copyGitHubLink();
+  assert.equal(copied, 'https://github.com/zhuhhz/jianzhong-guanxiang-public');
+  assert.equal(success.toasts[0].title, '链接已复制');
+
+  const failure = loadPage({}, { setClipboardData: (options: WechatMiniprogram.SetClipboardDataOption) => {
+    options.fail?.({ errMsg: 'setClipboardData:fail' });
+  } });
+  failure.page.copyGitHubLink();
+  assert.equal(failure.toasts[0].title, '复制失败，请重试');
+
+  const unsupported = loadPage();
+  unsupported.page.copyGitHubLink();
+  assert.equal(unsupported.toasts[0].title, '当前微信不支持复制');
+});
+
 test('diagnostics copy only bounded codes and versions after a user action, excluding private error text', () => {
   let copied = '', writes = 0;
   const { page } = loadPage({}, { getAccountInfoSync: () => ({ miniProgram: { version: '1.2.3' } }),
@@ -1523,11 +1564,46 @@ test('an empty all-types chat result offers an explicit file-only retry and copi
   page.onLoad(); await page.chooseChatFile();
   assert.deepEqual(sources, ['chat-all']); assert.equal(page.data.canRetryChatFile, true);
   assert.equal(page.data.errorCode, 'NO_FILE_EMPTY_LIST'); assert.equal(page.data.format, '');
+  assert.equal(page.data.canRestartPicker, false);
+  assert.match(page.data.errorMessage, /右上角「…」选择「重新进入小程序」/);
   page.copyDiagnostic(); assert.match(copied, /运行版本 体验版/); assert.ok(copied.includes(shape));
   tapping = true; const retry = page.retryChatFile(); tapping = false;
   assert.deepEqual(sources, ['chat-all', 'chat-file']); await retry;
   assert.equal(page.data.format, 'PSD'); assert.equal(page.data.pickerDiagnostic, ''); assert.equal(page.data.canRetryChatFile, false);
   page.backToHome();
+});
+
+test('both empty chat picker modes prompt for restart and show manual recovery on failure', async () => {
+  const restarts: WechatMiniprogram.RestartMiniProgramOption[] = [];
+  const { page, modals } = loadPage({ chooseDesignFile: async (source: string) => {
+    throw Object.assign(new Error('empty result'), { code: 'NO_FILE_EMPTY_LIST',
+      pickerDiagnostic: `source=${source};list=array;count=0;path=missing;tempFilePath=missing` });
+  } }, { restartMiniProgram: (options: WechatMiniprogram.RestartMiniProgramOption) => restarts.push(options) });
+  const choosing = page.chooseChatFile();
+  page.onHide();
+  await choosing;
+  assert.equal(page.data.canRestartPicker, true);
+  assert.equal(modals.length, 0);
+  page.onShow();
+  assert.equal(modals[0]?.confirmText, '重新进入');
+  modals[0].success?.({ confirm: false, cancel: true, content: '', errMsg: 'showModal:ok' });
+  await page.retryChatFile();
+  assert.equal(page.data.canRetryChatFile, false);
+  assert.equal(page.data.canRestartPicker, true);
+  assert.equal(restarts.length, 0);
+  assert.equal(modals[1]?.confirmText, '重新进入');
+  modals[1].success?.({ confirm: true, cancel: false, content: '', errMsg: 'showModal:ok' });
+  page.restartAfterEmptyPicker();
+  assert.equal(restarts.length, 1);
+  assert.equal(restarts[0].path, 'pages/index/index');
+  restarts[0].fail?.({ errMsg: 'restartMiniProgram:fail' });
+  assert.match(page.data.errorMessage, /右上角「…」选择「重新进入小程序」/);
+  assert.equal(modals[2]?.content, page.data.errorMessage);
+  assert.equal(modals[2]?.showCancel, false);
+  assert.equal(page.data.errorCode, 'NO_FILE_EMPTY_LIST');
+  await page.chooseAlbum();
+  assert.equal(page.data.canRestartPicker, false);
+  assert.equal(page.data.errorMessage, 'empty result');
 });
 
 test('picker structure is fully whitelisted and file-only retry is not offered for other import sources', () => {

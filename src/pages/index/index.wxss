@@ -12,7 +12,9 @@ button[disabled] { opacity: .45; }
 }
 .home { padding: 70rpx 48rpx 40rpx; padding-bottom: calc(40rpx + env(safe-area-inset-bottom)); }
 .home-topbar { display: flex; align-items: center; justify-content: space-between; min-height: 44px; }
+.home-brand { display: flex; flex-direction: column; min-width: 0; }
 .wordmark { font-size: 19rpx; font-weight: 600; letter-spacing: 3rpx; color: var(--muted); }
+.home-topbar .github-entry { display: flex; align-items: center; justify-content: flex-start; align-self: flex-start; box-sizing: border-box; width: auto; min-width: 44px; min-height: 32px; margin: 0; padding: 0 8px 0 0; border: 0; border-radius: 0; background: transparent; color: var(--muted); font-size: 11px; line-height: 1.4; white-space: nowrap; }
 .home-topbar .theme-trigger { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: auto; min-width: 44px; min-height: 44px; margin: 0; padding: 0; overflow: visible; background: transparent; color: var(--control); }
 .theme-trigger-content { display: flex; align-items: center; justify-content: center; gap: 6px; box-sizing: border-box; height: 38px; padding: 0 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); box-shadow: var(--raised-small); font-size: 12px; line-height: 1; white-space: nowrap; }
 .palette-icon { position: relative; flex-shrink: 0; box-sizing: border-box; width: 18px; height: 18px; border: 1.5px solid currentColor; border-radius: 55% 55% 45% 45%; transform: rotate(-18deg); }

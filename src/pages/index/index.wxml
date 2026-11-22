@@ -1,7 +1,10 @@
 <view class="page theme-{{theme}} {{hasFile ? 'page-preview' : ''}}">
   <view wx:if="{{!hasFile}}" class="home">
     <view class="home-topbar">
-      <view class="wordmark">DESIGN FILE PREVIEW</view>
+      <view class="home-brand">
+        <view class="wordmark">DESIGN FILE PREVIEW</view>
+        <button class="github-entry" bindtap="copyGitHubLink" aria-label="复制 GitHub 项目链接" hover-class="none">GitHub 项目 ↗</button>
+      </view>
       <button class="theme-trigger" bindtap="openThemePicker" aria-label="选择界面主题" aria-expanded="{{themePickerOpen}}"><view class="theme-trigger-content"><view class="palette-icon"><view class="palette-dot palette-dot-one"></view><view class="palette-dot palette-dot-two"></view><view class="palette-dot palette-dot-three"></view></view><text>主题</text></view></button>
     </view>
     <view class="brand-icon"><view class="brand-fold"></view><view class="brand-line"></view><view class="brand-line short"></view></view>
@@ -10,6 +13,12 @@
 
     <button class="primary choose" bindtap="chooseChatFile" loading="{{busy}}" disabled="{{busy}}">{{busy ? busyText : '从微信聊天选择文件'}}</button>
     <button class="choose-hint" bindtap="chooseAlbum" aria-label="从相册选择 RAW 图片，实际格式以微信返回为准" disabled="{{busy}}">从相册选择 RAW 图片</button>
+    <view wx:if="{{errorMessage}}" class="notice error" role="alert">
+      <text>{{errorMessage}}</text>
+      <button wx:if="{{canRestartPicker}}" class="diagnostic-button" bindtap="restartAfterEmptyPicker" disabled="{{busy}}">重新进入小程序</button>
+      <button wx:if="{{canRetryChatFile && (errorCode === 'NO_FILE_EMPTY_LIST' || errorCode === 'NO_FILE_PATH_MISSING')}}" class="diagnostic-button" bindtap="retryChatFile" disabled="{{busy}}">改用聊天文件模式</button>
+      <button wx:if="{{canCopyDiagnostic}}" class="diagnostic-button" bindtap="copyDiagnostic">复制诊断信息</button>
+    </view>
 
     <view class="formats">
       <view class="format-row"><text class="format-tag">RAW</text><text class="format-description">相机高清 JPEG · 传感器 PNG（受限）</text></view>
@@ -30,7 +39,6 @@
       <view>SVG：不超过 1 MiB；预览单边不超过 4096 px，总像素不超过 4,194,304。原尺寸 PNG 需单边不超过 1365 px 且当前微信可渲染。</view>
       <view>32 MiB 是 PSD／PSB 完整解码预算；大图预览另按文件布局判断。导出期间请保持小程序在前台，失败后可重试。</view>
     </view>
-    <view wx:if="{{errorMessage}}" class="notice error" role="alert"><text>{{errorMessage}}</text><button wx:if="{{canRetryChatFile && (errorCode === 'NO_FILE_EMPTY_LIST' || errorCode === 'NO_FILE_PATH_MISSING')}}" class="diagnostic-button" bindtap="retryChatFile" disabled="{{busy}}">改用聊天文件模式</button><button wx:if="{{canCopyDiagnostic}}" class="diagnostic-button" bindtap="copyDiagnostic">复制诊断信息</button></view>
   </view>
 
   <view wx:else class="preview-page">

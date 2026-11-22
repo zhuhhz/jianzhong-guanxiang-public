@@ -24,7 +24,7 @@
 
 首页格式卡片下方（SVG行之后、详细说明之前）将隐私说明与反馈入口集中展示：隐私说明分两行居中，使用主题浅色文字、不带绿点，保留“本机解析、不修改原稿”和“AI中的PDF由用户主动转发”的完整含义；其下提供居中文字入口“反馈建议 ↗”，文字使用`var(--control)`；无胶囊背景或边框，点击区域至少44px高。可点击部分保留微信原生反馈行为（`open-type="feedback"`）。首页恢复原有宽松留白、字号、区块间距和完整说明，保留底部安全区；短屏自然滚动，不压缩为单屏。独立普通PDF入口继续移除。反馈关联当前小程序，由管理员登录微信小程序管理后台查看，无需绑定个人邮箱或个人微信聊天。用户主动提交的反馈内容由微信处理，小程序不会自动附带设计原稿；未引入反馈SDK、自建表单或后端。本轮仅完成入口接入，微信开发者工具及Android/iOS实际提交反馈均为NOT_RUN。
 
-本公开仓库用于提供经审查的源码快照；原私有开发仓库及其 Git 历史不属于公开范围。未经授权的设计原稿、参考图、设备截图和本地私人测试产物不随公开源码分发。APK 是否通过 Releases 发布，仍需单独确认。
+本公开仓库用于提供经审查的源码快照；原私有开发仓库及其 Git 历史不属于公开范围。未经授权的设计原稿、参考图、设备截图和本地私人测试产物不随公开源码分发。APK 是否通过 Releases 发布，仍需单独确认。小程序首页的「GitHub 项目 ↗」可复制本仓库链接。
 
 **当前代码包含 V1.1 色彩与预览导出、V1.2 AI 分段校验及原尺寸 PNG 流式导出；交付状态：PARTIAL。** 已实现大图概览与按需局部高清、受支持 ICC 到 sRGB 的转换、高质量预览 PNG 保存、PDF 兼容 AI 的原生查看与主动转发 PDF。普通 PDF 的独立选择、预览及首页格式入口已移除；AI 中查看和转发 PDF 的路径保留，微信双端仍待验证。AI 转 PNG 未交付，不引入 PDF 渲染分包或新运行依赖。原尺寸导出仅开放下述已实现的合成图路径，生成和校验成功后直接调用相册保存，无需再次点击；保存失败保留已生成文件供重试。未扩大 SVG 或 PSB RGB16 支持。已有 Node 与构建结果保留，指定两份原尺寸 PNG 的安卓回传字节已核对；新增自动保存流程、当前微信开发者工具运行及 iOS 仍待独立验证。
 
@@ -54,7 +54,9 @@ RAW 分包沿用选中文件后的按需加载与失败重试，不提前初始�
 
 已推送的 P1/R1B 提交 `9460e1fbc31e67cc7622d22e36c144c5405e08cf` 已通过 [GitHub Actions](https://github.com/zhuhhz/jianzhong-guanxiang/actions/runs/44746103112)。后续适屏、系统返回、文件详情和背景切换已逐项推送；背景切换提交 `054d0fad3c948fc03ecd9228ae8901cf8785470c` 的 [CI](https://github.com/zhuhhz/jianzhong-guanxiang/actions/runs/44756328215) 共 405 项测试，391 通过、14 跳过，缺少的私人样本未上传。CI 不替代微信真机验收。
 
-错误页可主动复制本地诊断，包含版本、开发／体验／正式环境、格式和规范化错误码；选择器失败时另含固定枚举描述的回调结构，不复制字段值、错误正文、文件名、路径、照片或 EXIF。开发／体验环境未提供线上版本号时显示 UNKNOWN，不以此判断是否更新。全部类型聊天入口返回空列表或缺少路径时，可主动改用聊天文件模式；不自动重开选择器、不猜测路径或 RAW 类型。该问题仍需用户新版真机回调确认根因。运行时错误仅在当前进程内记录固定标记，不添加远程日志。首页支持说明默认折叠，手机点击区至少 44px。新增流程的真机检查见 [P1 手动验收](docs/p1-device-checks.md)。
+文件选择、读取或解析失败时会直接弹出原因。主动取消选择会直接返回。聊天选择器返回空列表时，可点弹窗中的「重新进入」，回到首页后手动选文件。微信重启接口不可用或调用失败时，页面会提示从右上角「…」手动重新进入。全部类型聊天入口返回空列表或缺少路径时，还可主动改用聊天文件模式。微信偶发返回空列表的内部原因待确认。
+
+用户可主动复制本地诊断，包含版本、开发／体验／正式环境、格式和规范化错误码。选择器失败时另含固定枚举描述的回调结构，覆盖来源、列表状态和字段类型。诊断的字段范围不含错误正文、文件名、路径、照片、EXIF 或回调字段原值。开发／体验环境未提供线上版本号时显示 UNKNOWN。运行时错误仅在当前进程内记录固定标记。首页支持说明默认折叠，相关真机检查见 [P1 手动验收](docs/p1-device-checks.md)。
 
 ```powershell
 pnpm install --frozen-lockfile --ignore-scripts
@@ -266,6 +268,8 @@ SVG 的文字、CSS/style、渐变、defs/use、图片、滤镜、蒙版、动�
 
 ## 实际验证
 
+本次文件错误提示和首页 GitHub 入口已通过本地 `pnpm check`、`pnpm build` 和 `pnpm test`，402 项测试通过、14 项跳过。新增交互的微信真机验证待完成。
+
 | 验证层 | 状态与证据 |
 | --- | --- |
 | TypeScript 5.9.3 | **PASS**，`tsc --noEmit` |
@@ -283,7 +287,7 @@ Node 真实二进制解析与安全拒绝覆盖 RGB8/透明 PSD、PSD/PSB Raw/RL
 
 桥接/页面测试使用明确标注的微信 API 桩；这些测试中的 PNG 由 Node pngjs 检验像素，**不能替代微信 Canvas 或相册真机验证**。Git 仅包含自行生成的 PSD/PSB、SVG 和纯色 JPEG 测试样本。两个公开 Photoshop 参考样本和第三方 AI 设计样本均留本地、不进入 Git；缺少相应素材时，依赖它们的参考测试显式 SKIP，不自动下载，原有像素及结构断言不变。项目生成的结构与安全测试继续执行。AI 来源、哈希及许可证记录位于 `tests/fixtures/ai/`。Git 同步不自动触发私人文件解码；历史干净检出计数不作为当前测试总数。
 
-历史日志保留在 `test-results/node-tests.txt`、`test-results/platform-tests.txt`、`test-results/build.txt` 及 `test-results/wechat-debug-resume/`；此前布局/过渡证据在 `test-results/wechat-preview-back/`，早期高清及19项页面测试证据在 `test-results/wechat-photoshop-hd/`、`test-results/wechat-hd-photoshop/`，不将其旧计数标为当前结果。当前 V1.1 与 V1.2 AI 证据分别在 `.local-test-output/v11-color-export-pdf/`、`.local-test-output/v12-ai-real/`。Android历史截图和回传PNG见 `test-results/wechat-android-oppo-find-x7/results.json`；私有AI结果见 `test-results/wechat-user-ai/results.json`。用户桌签AI的实际姓名与给定PNG占位文字不同，不作同图像素一致声明。既有版本扫描未发现开发者服务器上传调用；旧版异步生成后的文件分享已移除；本轮只恢复独立点击触发的PDF分享，历史记录保留，新分享真机NOT_RUN。扫码预览仅提交 `dist/` 代码包，不包含样本、私人文件或开发工具。上述证据均为本地Git忽略文件。开源复用及许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，当前未公开发布。
+历史日志保留在 `test-results/node-tests.txt`、`test-results/platform-tests.txt`、`test-results/build.txt` 及 `test-results/wechat-debug-resume/`；此前布局/过渡证据在 `test-results/wechat-preview-back/`，早期高清及19项页面测试证据在 `test-results/wechat-photoshop-hd/`、`test-results/wechat-hd-photoshop/`，不将其旧计数标为当前结果。当前 V1.1 与 V1.2 AI 证据分别在 `.local-test-output/v11-color-export-pdf/`、`.local-test-output/v12-ai-real/`。Android历史截图和回传PNG见 `test-results/wechat-android-oppo-find-x7/results.json`；私有AI结果见 `test-results/wechat-user-ai/results.json`。用户桌签AI的实际姓名与给定PNG占位文字不同，不作同图像素一致声明。既有版本扫描未发现开发者服务器上传调用；旧版异步生成后的文件分享已移除；本轮只恢复独立点击触发的PDF分享，历史记录保留，新分享真机NOT_RUN。扫码预览仅提交 `dist/` 代码包，不包含样本、私人文件或开发工具。上述证据均为本地Git忽略文件。第三方代码复用及许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 此前修复两处真实运行问题：微信原生返回的跨执行环境 ArrayBuffer 不再被 `instanceof` 误拒绝，仍严格检查读取长度；PNG 导出省略源裁剪参数、保留目标尺寸，修复极小图像颜色错误。`readFile` 官方网页当时无法访问，返回类型依据已安装的官方 `miniprogram-api-typings@5.2.3` 和真实运行结果确认。导出参数符合[官方默认整画布用法](https://developers.weixin.qq.com/miniprogram/dev/api/canvas/wx.canvasToTempFilePath.html)，修复的直接依据是本机真实 Canvas 对照实验，并非对所有设备行为的推断。旧便携工具的基础库安装 EXDEV/HTTP 500 通过复用用户已安装的新版工具解决，未更改解析器或文件系统设置。
 
