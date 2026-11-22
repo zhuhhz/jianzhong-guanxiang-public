@@ -1,0 +1,6 @@
+<svg width="200" height="100" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(40 20) rotate(15) scale(1.25)" opacity="0.75">
+    <rect width="60" height="30" fill="rgb(30, 120, 240)"/>
+    <path d="M 0 0 L 60 30" transform="matrix(1 0 0 1 0 0)" stroke="red"/>
+  </g>
+</svg>

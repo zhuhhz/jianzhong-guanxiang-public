@@ -1,0 +1,20 @@
+{
+  "pages": ["pages/index/index"],
+  "subpackages": [{ "root": "raw-engine", "name": "raw-engine", "pages": [] }],
+  "supportedMaterials": [{
+    "materialType": "application/x-photoshop",
+    "name": "用${nickname}打开",
+    "desc": "本机预览PSD并保存图片",
+    "path": "pages/index/index"
+  }],
+  "sitemapLocation": "sitemap.json",
+  "window": {
+    "navigationBarTitleText": "鉴中观象",
+    "navigationBarBackgroundColor": "#f5f7f4",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f5f7f4"
+  },
+  "style": "v2",
+  "resizable": true,
+  "lazyCodeLoading": "requiredComponents"
+}

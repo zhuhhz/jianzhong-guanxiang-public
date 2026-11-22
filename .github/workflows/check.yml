@@ -1,0 +1,31 @@
+name: Check, build and test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6.1.1
+        with:
+          version: 11.25.0
+          run_install: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24.22.3
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm check
+      # Platform tests import the generated Mini Program bundle.
+      - run: pnpm build
+      - run: pnpm test

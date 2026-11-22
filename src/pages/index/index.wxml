@@ -1,0 +1,156 @@
+<view class="page theme-{{theme}} {{hasFile ? 'page-preview' : ''}}">
+  <view wx:if="{{!hasFile}}" class="home">
+    <view class="home-topbar">
+      <view class="wordmark">DESIGN FILE PREVIEW</view>
+      <button class="theme-trigger" bindtap="openThemePicker" aria-label="选择界面主题" aria-expanded="{{themePickerOpen}}"><view class="theme-trigger-content"><view class="palette-icon"><view class="palette-dot palette-dot-one"></view><view class="palette-dot palette-dot-two"></view><view class="palette-dot palette-dot-three"></view></view><text>主题</text></view></button>
+    </view>
+    <view class="brand-icon"><view class="brand-fold"></view><view class="brand-line"></view><view class="brand-line short"></view></view>
+    <view class="title">鉴中观象</view>
+    <view class="subtitle">设计文件，打开就看。</view>
+
+    <button class="primary choose" bindtap="chooseChatFile" loading="{{busy}}" disabled="{{busy}}">{{busy ? busyText : '从微信聊天选择文件'}}</button>
+    <button class="choose-hint" bindtap="chooseAlbum" aria-label="从相册选择 RAW 图片，实际格式以微信返回为准" disabled="{{busy}}">从相册选择 RAW 图片</button>
+
+    <view class="formats">
+      <view class="format-row"><text class="format-tag">RAW</text><text class="format-description">相机高清 JPEG · 传感器 PNG（受限）</text></view>
+      <view class="format-row"><text class="format-tag">PSD</text><text class="format-description">局部高清 · 原尺寸 PNG 保存（受限）</text></view>
+      <view class="format-row"><text class="format-tag">PSB</text><text class="format-description">实验性预览 · 兼容范围有限</text></view>
+      <view class="format-row"><text class="format-tag">TIFF</text><text class="format-description">Raw 局部高清 · PNG 保存</text></view>
+      <view class="format-row format-row-ai"><text class="format-tag">AI</text><text class="format-description">PDF 兼容预览 · 滚滚长江东逝水</text></view>
+      <view class="format-row"><text class="format-tag">SVG</text><text class="format-description">安全静态图形 · 原尺寸 PNG（受限）</text></view>
+    </view>
+    <view class="privacy"><text>本机解析 · 不修改原稿</text><text>AI 中的 PDF 转发由你主动发起</text></view>
+    <view class="feedback-entry"><button class="feedback-button" open-type="feedback" aria-label="意见反馈" hover-class="none" disabled="{{busy}}">反馈建议 ↗</button></view>
+    <button class="limits-toggle" bindtap="toggleLimits" aria-expanded="{{limitsOpen}}">支持范围与限制 {{limitsOpen ? '⌃' : '⌄'}}</button>
+    <view wx:if="{{limitsOpen}}" class="limits">
+      <view>RAW：可提取受支持 ARW、CR2、CR3、NEF、RAF、DNG 中的相机 JPEG。仅指定 Sony 未压缩 ARW 支持传感器原像素与原尺寸 8 位 PNG。相册可能返回转换后的普通图片，实际能力以读取结果为准。</view>
+      <view>PSD／PSB：支持部分 RGB 合成图，大图可按需查看局部。RGB16 仅支持受支持的 PSD Raw。原尺寸 PNG 不保留图层和 16 位数据；PSB、透明合成图及其他压缩方式的兼容范围有限。</view>
+      <view>TIFF：仅查看第一页，受支持文件可保存原尺寸 8 位 PNG；压缩 TIFF 不超过 32 MiB，并受图像和内存预算限制。</view>
+      <view>AI：不超过 32 MiB，须包含 PDF 兼容内容，可用微信查看或主动转发 PDF。</view>
+      <view>SVG：不超过 1 MiB；预览单边不超过 4096 px，总像素不超过 4,194,304。原尺寸 PNG 需单边不超过 1365 px 且当前微信可渲染。</view>
+      <view>32 MiB 是 PSD／PSB 完整解码预算；大图预览另按文件布局判断。导出期间请保持小程序在前台，失败后可重试。</view>
+    </view>
+    <view wx:if="{{errorMessage}}" class="notice error" role="alert"><text>{{errorMessage}}</text><button wx:if="{{canRetryChatFile && (errorCode === 'NO_FILE_EMPTY_LIST' || errorCode === 'NO_FILE_PATH_MISSING')}}" class="diagnostic-button" bindtap="retryChatFile" disabled="{{busy}}">改用聊天文件模式</button><button wx:if="{{canCopyDiagnostic}}" class="diagnostic-button" bindtap="copyDiagnostic">复制诊断信息</button></view>
+  </view>
+
+  <view wx:else class="preview-page">
+    <view class="preview-header">
+      <button class="back-button" bindtap="backToHome" aria-label="返回首页并取消本地加载"><text class="back-arrow">‹</text></button>
+      <button class="file-info" bindtap="togglePreviewDetails" aria-label="查看完整文件名和详情" aria-expanded="{{previewDetailsOpen}}">
+        <view class="filename-row"><text wx:if="{{format}}" class="file-format">{{format}}</text><text class="filename">{{filename}}</text><text class="file-details-label">详情⌄</text></view>
+        <view class="file-meta"><text wx:if="{{dimensions}}">{{dimensions}} · </text><text>{{filesize}}</text></view>
+      </button>
+    </view>
+    <view class="preview-body">
+    <view class="stage preview-background-{{previewBackground}} {{isDocument ? 'document-stage' : ''}}" style="{{stageStyle}}">
+      <movable-area wx:if="{{previewPath}}" class="preview-area" scale-area>
+        <movable-view wx:if="{{viewportMounted}}" class="preview-image-wrap" direction="all" inertia out-of-bounds scale scale-min="1" scale-max="{{zoomMax}}" scale-value="{{zoomCommand}}" bindscale="onScale" bindchange="onMove" bindtouchstart="onPreviewTouchStart" bindtouchmove="onPreviewTouchMove" bindtouchend="onPreviewTouchEnd" bindtouchcancel="onPreviewTouchCancel">
+          <canvas wx:if="{{pixelPreview}}" type="2d" id="pixelPreviewCanvas" class="preview-image" bindtouchstart="onPixelTouchStart" bindtouchmove="onPixelTouchMove" bindtouchend="onPixelTouchEnd" bindtouchcancel="onPixelTouchCancel" />
+          <image wx:else class="preview-image" src="{{previewPath}}" data-path="{{previewPath}}" mode="aspectFit" bindload="onPreviewLoad" binderror="onPreviewError" show-menu-by-longpress="{{false}}" />
+          <image wx:if="{{detailPath}}" class="detail-image" style="{{detailStyle}}" src="{{detailPath}}" data-path="{{detailPath}}" mode="scaleToFill" binderror="onDetailError" show-menu-by-longpress="{{false}}" />
+        </movable-view>
+      </movable-area>
+      <scroll-view wx:else class="stage-message-scroll" scroll-y="{{true}}">
+      <view class="stage-message">
+        <view wx:if="{{busy}}" class="loading-dots" aria-hidden="true"><view></view><view></view><view></view></view>
+        <view wx:else class="document-symbol">{{isDocument ? format : '·'}}</view>
+        <view class="stage-heading">{{busy ? busyText : (isDocument ? format + ' 文档预览已就绪' : (canRawJpeg || canViewRawJpeg) ? '相机高清 JPEG 已就绪' : '暂无可显示的预览')}}</view>
+        <view wx:if="{{!busy && !isDocument && (canRawJpeg || canViewRawJpeg)}}" class="stage-description">整图解码超出预算，可全屏查看或保存相机 JPG</view>
+        <view wx:if="{{busy && busyHint}}" class="stage-description">{{busyHint}}</view>
+        <view wx:if="{{busy}}" class="stage-description">文件仅在本地处理</view>
+        <view wx:if="{{isDocument && !busy}}" class="stage-description">使用微信内置查看器预览 PDF 兼容内容</view>
+        <button wx:if="{{canViewRawJpeg}}" class="primary document-button" bindtap="viewCameraJpeg" disabled="{{busy}}">全屏查看相机 JPG</button>
+        <button wx:if="{{isDocument}}" class="primary document-button" bindtap="openDocument" disabled="{{busy}}">打开 PDF 预览</button>
+        <button wx:if="{{isDocument && canShareDocument}}" class="primary document-button" bindtap="shareDocument" disabled="{{busy}}">分享 PDF 到聊天</button>
+      </view>
+      </scroll-view>
+      <view wx:if="{{detailLoading}}" class="detail-loading" role="status"><view class="loading-dots" aria-hidden="true"><view></view><view></view><view></view></view><text>正在加载高清细节</text></view>
+      <view wx:if="{{previewPath && busy && !exportMode}}" class="detail-loading" role="status">{{busyText}}</view>
+    </view>
+    <view wx:if="{{previewPath}}" class="gesture-hint">{{rawJpegInline ? '相机内嵌 JPG · 双击 / 双指缩放' : '双击 / 双指缩放 · 拖动查看'}}</view>
+
+    <view wx:if="{{previewPath}}" class="toolbar">
+      <button class="fit-button" bindtap="fitToScreen" aria-label="适应屏幕">适屏</button>
+      <view class="zoom-controls"><button class="zoom-button" bindtap="zoomOut" disabled="{{zoom <= 1}}" aria-label="缩小">−</button><text class="zoom-value" aria-label="相对适应屏幕的缩放比例">{{zoomLabel}}</text><button class="zoom-button" bindtap="zoomIn" disabled="{{zoom >= zoomMax}}" aria-label="放大">＋</button></view>
+      <view class="preview-tools-anchor">
+        <button class="tools-trigger" bindtap="togglePreviewTools" aria-expanded="{{previewToolsOpen}}">工具⌄</button>
+        <view class="preview-tools {{previewToolsOpen ? 'preview-tools-open' : ''}}">
+          <button wx:if="{{rawAutoAvailable}}" class="fit-button" bindtap="toggleRawAuto" disabled="{{busy}}" aria-pressed="{{rawAutoEnabled}}">{{rawJpegInline ? '优化概览' : rawAutoEnabled ? '优化已开' : '优化已关'}}</button>
+          <button wx:if="{{canRawPixels}}" class="fit-button" bindtap="viewRawPixels" disabled="{{busy}}" aria-label="放大查看实际传感器原像素局部">原像素</button>
+          <button wx:if="{{canViewRawJpeg}}" class="fit-button" bindtap="viewCameraJpeg" disabled="{{busy}}" aria-label="全屏查看相机 JPEG">相机 JPG</button>
+          <button class="fit-button" bindtap="cyclePreviewBackground" aria-label="切换预览背景，不改变保存图片">背景：{{previewBackground === 'checker' ? '棋盘' : previewBackground === 'white' ? '白' : '黑'}}</button>
+          <button class="reset-button" bindtap="fitToScreen">重置</button>
+        </view>
+      </view>
+    </view>
+    <view class="preview-actions {{previewPath ? 'preview-actions-expanded' : ''}}">
+      <scroll-view class="preview-notes {{errorMessage ? 'preview-notes-error' : ''}}" scroll-y="{{true}}" bindtap="togglePreviewDetails" aria-label="保存说明与风险提示，可滚动或点击查看详情">
+        <view class="preview-notes-content">
+        <view wx:if="{{errorMessage}}" class="preview-note-error" role="alert">{{errorMessage}}</view>
+        <view wx:if="{{memoryNotice}}" role="status">{{memoryNotice}}</view>
+        <view wx:for="{{importantWarnings}}" wx:key="index">{{item}}</view>
+        <view wx:if="{{canNative}}">{{format === 'RAW' ? (rawAutoEnabled ? '优化显影 · 8 位 PNG；不保留 RAW 位深，生成可能较慢。' : '基础显影 · 8 位 PNG；不保留 RAW 位深，生成可能较慢。') : format === 'TIFF' ? '8 位 PNG · 仅第一页' : '8 位合成 PNG · 不保留图层或 16 位数据'}}</view>
+        <view wx:elif="{{canRawJpeg}}">相机内嵌 JPG，非传感器原尺寸；保留相机颜色。</view>
+        <view wx:elif="{{originalImage}}">保存微信返回的 {{originalImage === 'JPEG' ? 'JPG' : 'PNG'}} 图片。</view>
+        <view wx:elif="{{!importantWarnings.length && !errorMessage && !memoryNotice}}">本机处理 · 原文件保持不变</view>
+        <view wx:if="{{nativeState === 'CANCELLED'}}">生成已取消，可重试。</view>
+        <view wx:elif="{{nativeState === 'READY' || nativeState === 'DELIVERING'}}">PNG 已生成，可复用结果重试保存。</view>
+        </view>
+      </scroll-view>
+    </view>
+    </view>
+    <view wx:if="{{!isDocument}}" class="save-slot">
+      <button wx:if="{{canNative || canRawJpeg || (canSave && previewAtOriginalSize)}}" class="primary save-button" bindtap="saveOriginalImage" disabled="{{busy}}">{{canNative || (!canRawJpeg && originalImage !== 'JPEG') ? '保存 PNG 到相册' : '保存 JPG 到相册'}}</button>
+      <view wx:elif="{{!busy && format}}" class="save-unavailable">当前文件或设备暂不能保存图片</view>
+    </view>
+  </view>
+  <view wx:if="{{hasFile && previewToolsOpen}}" class="preview-tools-backdrop" bindtap="closePreviewTools" catchtouchmove="keepThemePickerOpen"></view>
+  <view wx:if="{{hasFile && previewDetailsOpen}}" class="theme-backdrop preview-details-backdrop" bindtap="closePreviewDetails" catchtouchmove="keepThemePickerOpen">
+    <view class="preview-details-sheet" catchtap="keepThemePickerOpen" role="dialog" aria-label="文件详情">
+      <view class="preview-details-header"><text>文件详情</text><button class="details-close" bindtap="closePreviewDetails" aria-label="关闭文件详情">×</button></view>
+      <scroll-view class="preview-content" scroll-y="{{true}}">
+        <view class="full-filename" selectable>{{filename}}</view>
+        <view class="file-facts">
+          <view wx:for="{{fileFacts}}" wx:key="label" class="file-fact"><text class="fact-label">{{item.label}}</text><text class="fact-value" selectable>{{item.value}}</text></view>
+          <view wx:if="{{canNative || canRawJpeg || (canSave && previewAtOriginalSize)}}" class="file-fact"><text class="fact-label">本次保存</text><text class="fact-value">{{canNative ? 'PNG · ' + dimensions : canRawJpeg ? 'JPG · ' + rawJpegSize : (originalImage === 'JPEG' ? 'JPG' : 'PNG') + ' · ' + dimensions}}</text></view>
+          <view wx:if="{{format === 'RAW' && canNative}}" class="file-fact"><text class="fact-label">PNG 显影</text><text class="fact-value">{{rawAutoEnabled ? '自动优化 · 8 位 sRGB' : '基础显影 · 8 位 sRGB'}}</text></view>
+          <view wx:elif="{{canRawJpeg}}" class="file-fact"><text class="fact-label">JPG 处理</text><text class="fact-value">相机内嵌原样保存</text></view>
+        </view>
+        <view class="notice warning">未读取 DPI、源 ICC 配置名称及图层数；色彩处理与兼容限制见下方提示。</view>
+        <view wx:if="{{errorMessage}}" class="notice error" role="alert">{{errorMessage}}</view>
+        <view wx:if="{{memoryNotice}}" class="notice warning">{{memoryNotice}}</view>
+        <button wx:if="{{canCopyDiagnostic && (errorMessage || memoryNotice)}}" class="diagnostic-button" bindtap="copyDiagnostic">复制诊断信息</button>
+        <button wx:if="{{canRetryChatFile && (errorCode === 'NO_FILE_EMPTY_LIST' || errorCode === 'NO_FILE_PATH_MISSING')}}" class="diagnostic-button" bindtap="retryChatFile" disabled="{{busy}}">改用聊天文件模式</button>
+        <view wx:for="{{warnings}}" wx:key="index" class="notice warning">{{item}}</view>
+        <view wx:if="{{canNative}}" class="notice warning">生成 8 位 PNG，不保留图层或 16 位编辑数据。可能耗时较长、占用较多本地空间。请保持前台，保存失败可复用结果重试。</view>
+      </scroll-view>
+    </view>
+  </view>
+  <view wx:if="{{busy && exportMode}}" class="export-backdrop" catchtap="keepExportOpen" catchtouchmove="keepExportOpen">
+    <view class="export-panel" role="dialog" aria-label="{{busyText}}">
+      <view class="export-title" role="status">{{busyText}}</view>
+      <block wx:if="{{exportMode === 'native' && nativeState === 'GENERATING'}}">
+        <view class="export-percent">{{nativeProgress}}%</view>
+        <view class="export-track" role="progressbar" aria-label="原尺寸 PNG 导出进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{nativeProgress}}"><view class="export-fill" style="{{'width: ' + nativeProgress + '%;'}}"></view></view>
+      </block>
+      <view wx:else class="export-track" role="status" aria-label="正在处理"><view class="export-fill export-indeterminate"></view></view>
+      <view class="export-hint">{{exportMode === 'native' && nativeState === 'GENERATING' ? '请保持小程序在前台，切换后台会取消生成。进度按已处理扫描行计量。' : '请稍候并按微信提示完成操作；返回首页可结束本次操作。'}}</view>
+      <button wx:if="{{exportMode === 'native' && nativeState === 'GENERATING'}}" class="fit-button" bindtap="cancelNative">取消导出</button>
+      <button wx:else class="fit-button" bindtap="backToHome">返回首页</button>
+    </view>
+  </view>
+  <view wx:if="{{themePickerOpen}}" class="theme-backdrop" bindtap="closeThemePicker" catchtouchmove="keepThemePickerOpen">
+    <view class="theme-sheet" catchtap="keepThemePickerOpen" role="dialog" aria-label="界面主题">
+      <view class="theme-sheet-header"><view class="theme-sheet-title">界面主题</view><button class="theme-close" bindtap="closeThemePicker" aria-label="关闭主题选择">×</button></view>
+      <view class="theme-sheet-description">选择喜欢的界面颜色</view>
+      <button class="theme-option {{theme === 'ink' ? 'theme-option-selected' : ''}}" data-theme="ink" bindtap="selectTheme" aria-label="青墨{{theme === 'ink' ? '，已选中' : ''}}"><view class="theme-swatch swatch-ink"><view class="theme-swatch-accent"></view></view><text class="theme-option-name">青墨</text><text class="theme-selected">{{theme === 'ink' ? '已选' : ''}}</text></button>
+      <button class="theme-option {{theme === 'paper' ? 'theme-option-selected' : ''}}" data-theme="paper" bindtap="selectTheme" aria-label="宣纸{{theme === 'paper' ? '，已选中' : ''}}"><view class="theme-swatch swatch-paper"><view class="theme-swatch-accent"></view></view><text class="theme-option-name">宣纸</text><text class="theme-selected">{{theme === 'paper' ? '已选' : ''}}</text></button>
+      <button class="theme-option {{theme === 'night' ? 'theme-option-selected' : ''}}" data-theme="night" bindtap="selectTheme" aria-label="夜墨{{theme === 'night' ? '，已选中' : ''}}"><view class="theme-swatch swatch-night"><view class="theme-swatch-accent"></view></view><text class="theme-option-name">夜墨</text><text class="theme-selected">{{theme === 'night' ? '已选' : ''}}</text></button>
+    </view>
+  </view>
+  <!-- Native return layer only; do not reparent the image or Canvas surfaces. -->
+  <block wx:if="{{canGuardPreview}}">
+    <page-container wx:for="{{previewBackSessions}}" wx:key="*this" data-session="{{item}}" show="{{hasFile}}" overlay="{{false}}" duration="{{0}}" custom-style="height:0;min-height:0;padding:0;overflow:hidden;background:transparent;" bindbeforeleave="onPreviewBack" />
+  </block>
+  <canvas type="2d" id="renderCanvas" class="render-canvas"></canvas>
+</view>

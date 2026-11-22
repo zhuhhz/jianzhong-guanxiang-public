@@ -1,0 +1,46 @@
+node_modules/
+dist/
+.tools/
+.local-fixtures/
+.local-test-output/
+project.private.config.json
+test-results/
+*.log
+
+# Credentials, temporary files and private design/test assets.
+.env
+.env.*
+*.tmp
+*.temp
+*.[pP][sS][dD]
+*.[pP][sS][bB]
+*.[aA][iI]
+*.[pP][dD][fF]
+*.[tT][iI][fF]
+*.[tT][iI][fF][fF]
+*.[aA][rR][wW]
+*.[cC][rR]2
+*.[cC][rR]3
+*.[nN][eE][fF]
+*.[rR][aA][fF]
+*.[dD][nN][gG]
+*.[rR][aA][wW]
+*.[pP][nN][gG]
+*.[jJ][pP][gG]
+*.[jJ][pP][eE][gG]
+/docs/鉴中观象_开发交接_2026-10-25.txt
+
+# Bundled share artwork.
+!/src/assets/share-cover.png
+
+# Only project-generated, reviewed binary fixtures belong in Git.
+!/tests/fixtures/photoshop/generated-raw.psd
+!/tests/fixtures/photoshop/generated-raw.psb
+!/tests/fixtures/photoshop/generated-rle.psd
+!/tests/fixtures/photoshop/generated-rle.psb
+!/tests/fixtures/photoshop/generated-alpha.psd
+!/tests/fixtures/photoshop/generated-alpha.psb
+!/tests/fixtures/photoshop-thumbnail/solid-rgb.jpg
+
+# Local RAW/JPEG review copies; never commit or package.
+/text/

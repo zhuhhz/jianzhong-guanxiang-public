@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180">
+  <title>QuickView &amp; shapes</title>
+  <rect x="8" y="8" width="80" height="50" rx="4" fill="#3978ff"/>
+  <circle cx="140" cy="35" r="25" fill="coral"/>
+  <ellipse cx="220" cy="35" rx="36" ry="20" fill="#24a887"/>
+  <line x1="10" y1="90" x2="280" y2="90" stroke="black" stroke-width="2"/>
+  <polyline points="10,140 50,110 90,140" fill="none" stroke="purple"/>
+  <polygon points="140,110 170,155 110,155" fill="orange"/>
+</svg>
