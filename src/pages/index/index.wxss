@@ -68,6 +68,8 @@ button[disabled] { opacity: .45; }
 .svg-playback-controls .svg-playback-button { display: flex; align-items: center; justify-content: center; gap: 6px; box-sizing: border-box; flex: 0 0 84px; width: 84px; max-width: 84px; min-width: 84px; height: 44px; min-height: 44px; margin: 0; padding: 0 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--control); font-size: 13px; font-weight: 600; line-height: 20px; white-space: nowrap; }
 .svg-playback-controls .svg-playback-primary { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .svg-playback-controls .svg-playback-icon { font-size: 16px; line-height: 1; }
+.svg-playback-controls .svg-pause-icon { display: flex; flex: 0 0 14px; align-items: center; justify-content: center; gap: 3px; width: 14px; height: 16px; }
+.svg-playback-controls .svg-pause-bar { flex: 0 0 3px; width: 3px; height: 12px; border-radius: 1px; background: currentColor; }
 .svg-playback-controls .svg-playback-hint { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; font-size: 12px; color: var(--muted); }
 .stage.preview-background-white { background: #fff; }
 .stage.preview-background-black { background: #111; }
