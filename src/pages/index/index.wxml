@@ -26,7 +26,7 @@
       <view class="format-row"><text class="format-tag">PSB</text><text class="format-description">实验性预览 · 兼容范围有限</text></view>
       <view class="format-row"><text class="format-tag">TIFF</text><text class="format-description">Raw 局部高清 · PNG 保存</text></view>
       <view class="format-row format-row-ai"><text class="format-tag">AI</text><text class="format-description">PDF 兼容预览 · 滚滚长江东逝水</text></view>
-      <view class="format-row"><text class="format-tag">SVG</text><text class="format-description">安全静态图形 · 原尺寸 PNG（受限）</text></view>
+      <view class="format-row"><text class="format-tag">SVG</text><text class="format-description">图形与基础动画 · PNG 保存（受限）</text></view>
     </view>
     <view class="privacy"><text>本机解析 · 不修改原稿</text><text>AI 中的 PDF 转发由你主动发起</text></view>
     <view class="feedback-entry"><button class="feedback-button" open-type="feedback" aria-label="意见反馈" hover-class="none" disabled="{{busy}}">反馈建议 ↗</button></view>
@@ -36,7 +36,7 @@
       <view>PSD／PSB：支持部分 RGB 合成图，大图可按需查看局部。RGB16 仅支持受支持的 PSD Raw。原尺寸 PNG 不保留图层和 16 位数据；PSB、透明合成图及其他压缩方式的兼容范围有限。</view>
       <view>TIFF：仅查看第一页，受支持文件可保存原尺寸 8 位 PNG；压缩 TIFF 不超过 32 MiB，并受图像和内存预算限制。</view>
       <view>AI：不超过 32 MiB，须包含 PDF 兼容内容，可用微信查看或主动转发 PDF。</view>
-      <view>SVG：不超过 1 MiB；预览单边不超过 4096 px，总像素不超过 4,194,304。原尺寸 PNG 需单边不超过 1365 px 且当前微信可渲染。</view>
+      <view>SVG：不超过 1 MiB；支持基础旋转、位移、缩放、数值和结构一致的路径动画。播放需当前微信可将 SVG 绘制到 Canvas，PNG 保存第一帧。预览单边不超过 4096 px，总像素不超过 4,194,304，原尺寸 PNG 单边不超过 1365 px。</view>
       <view>32 MiB 是 PSD／PSB 完整解码预算；大图预览另按文件布局判断。导出期间请保持小程序在前台，失败后可重试。</view>
     </view>
   </view>
@@ -55,6 +55,7 @@
         <movable-view wx:if="{{viewportMounted}}" class="preview-image-wrap" direction="all" inertia out-of-bounds scale scale-min="1" scale-max="{{zoomMax}}" scale-value="{{zoomCommand}}" bindscale="onScale" bindchange="onMove" bindtouchstart="onPreviewTouchStart" bindtouchmove="onPreviewTouchMove" bindtouchend="onPreviewTouchEnd" bindtouchcancel="onPreviewTouchCancel">
           <canvas wx:if="{{pixelPreview}}" type="2d" id="pixelPreviewCanvas" class="preview-image" bindtouchstart="onPixelTouchStart" bindtouchmove="onPixelTouchMove" bindtouchend="onPixelTouchEnd" bindtouchcancel="onPixelTouchCancel" />
           <image wx:else class="preview-image" src="{{previewPath}}" data-path="{{previewPath}}" mode="aspectFit" bindload="onPreviewLoad" binderror="onPreviewError" show-menu-by-longpress="{{false}}" />
+          <canvas wx:if="{{svgCanvasVisible}}" type="2d" id="svgAnimationCanvas" class="preview-image svg-animation-canvas {{svgFrameReady ? '' : 'svg-animation-pending'}}" bindtouchstart="onPixelTouchStart" bindtouchmove="onPixelTouchMove" bindtouchend="onPixelTouchEnd" bindtouchcancel="onPixelTouchCancel" />
           <image wx:if="{{detailPath}}" class="detail-image" style="{{detailStyle}}" src="{{detailPath}}" data-path="{{detailPath}}" mode="scaleToFill" binderror="onDetailError" show-menu-by-longpress="{{false}}" />
         </movable-view>
       </movable-area>
@@ -75,7 +76,12 @@
       <view wx:if="{{detailLoading}}" class="detail-loading" role="status"><view class="loading-dots" aria-hidden="true"><view></view><view></view><view></view></view><text>正在加载高清细节</text></view>
       <view wx:if="{{previewPath && busy && !exportMode}}" class="detail-loading" role="status">{{busyText}}</view>
     </view>
-    <view wx:if="{{previewPath}}" class="gesture-hint">{{rawJpegInline ? '相机内嵌 JPG · 双击 / 双指缩放' : '双击 / 双指缩放 · 拖动查看'}}</view>
+    <view wx:if="{{canPlaySvg}}" class="svg-playback-controls">
+      <button class="svg-playback-button svg-playback-primary" bindtap="toggleSvgAnimation" disabled="{{busy}}" aria-pressed="{{svgPlaying}}"><text class="svg-playback-icon" aria-hidden="true">{{svgPlaying ? 'Ⅱ' : '▶'}}</text><text>{{svgPlaying ? '暂停' : svgEnded ? '开始' : svgCanvasVisible ? '继续' : '开始'}}</text></button>
+      <button class="svg-playback-button" bindtap="replaySvgAnimation" disabled="{{busy || !svgCanvasVisible}}" aria-label="从头播放动画"><text class="svg-playback-icon" aria-hidden="true">↻</text><text>重播</text></button>
+      <text class="svg-playback-hint">双指缩放 · 拖动查看</text>
+    </view>
+    <view wx:elif="{{previewPath}}" class="gesture-hint">{{rawJpegInline ? '相机内嵌 JPG · 双击 / 双指缩放' : '双击 / 双指缩放 · 拖动查看'}}</view>
 
     <view wx:if="{{previewPath}}" class="toolbar">
       <button class="fit-button" bindtap="fitToScreen" aria-label="适应屏幕">适屏</button>

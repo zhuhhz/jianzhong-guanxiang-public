@@ -193,6 +193,54 @@ test('real parser errors keep the selected filename and expose an actionable mes
   assert.equal(modals[0].showCancel, false);
 });
 
+test('SVG playback pauses, resumes and replays on a separate surface while saving the first PNG', async () => {
+  let stops = 0, pauses = 0, resumes = 0, replays = 0;
+  const animation = { frame: () => '<svg width="2" height="3"/>', duration: Infinity };
+  const sessions: { current: () => boolean; done: (failed: boolean) => void; ready: () => void }[] = [];
+  const display = { width: 0, height: 0, requestAnimationFrame: () => 1 };
+  const { page, saved } = loadPage({
+    preparePreview: async () => ({ ...preview, info: { ...preview.info, format: 'SVG' },
+      exportSize: { width: 2, height: 3 }, svgAnimation: animation }),
+    startSvgPlayback: (track: unknown, canvas: unknown, size: unknown, current: () => boolean, done: (failed: boolean) => void, ready: () => void) => {
+      assert.equal(track, animation); assert.equal(canvas, display);
+      sessions.push({ current, done, ready });
+      return { stop: () => { stops++; }, pause: () => { pauses++; },
+        resume: () => { resumes++; }, restart: () => { replays++; } };
+    },
+  });
+  await page.chooseFile();
+  page.createSelectorQuery = () => ({ select: () => ({ fields: () => ({
+    exec: (callback: (results: unknown[]) => void) => callback([{ node: display, width: 100, height: 150 }]),
+  }) }) });
+  assert.equal(page.data.canPlaySvg, true);
+  page.toggleSvgAnimation();
+  assert.equal(page.data.svgPlaying, true);
+  assert.equal(page.data.svgFrameReady, false);
+  sessions[0].ready();
+  assert.equal(page.data.svgFrameReady, true);
+  page.toggleSvgAnimation();
+  assert.equal(page.data.svgPlaying, false); assert.equal(page.data.svgCanvasVisible, true);
+  assert.equal(page.data.svgFrameReady, true);
+  assert.equal(pauses, 1);
+  page.toggleSvgAnimation(); assert.equal(resumes, 1); assert.equal(sessions.length, 1);
+  page.replaySvgAnimation(); assert.equal(replays, 1);
+  await page.saveOriginalImage();
+  assert.deepEqual(saved, [preview.exportPath]);
+  page.onHide();
+  assert.equal(stops, 1); assert.equal(page.data.svgPlaying, false); assert.equal(page.data.svgCanvasVisible, false);
+  assert.equal(sessions[0].current(), false);
+  page.hidden = false;
+  page.toggleSvgAnimation();
+  assert.equal(sessions.length, 2);
+  page.backToHome();
+  assert.equal(stops, 2); assert.equal(page.svgAnimation, undefined);
+  sessions[1].done(true);
+  sessions[1].ready();
+  assert.equal(page.data.errorMessage, '');
+  assert.equal(page.data.svgFrameReady, false);
+  assert.equal(page.data.canPlaySvg, false);
+});
+
 test('returning home clears the preview without opening a picker and permits a new selection', async () => {
   let pickerCalls = 0;
   const { page, accessFailures, cleanups } = loadPage({ chooseDesignFile: async () => { pickerCalls++; return selected; } });

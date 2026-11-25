@@ -23,6 +23,7 @@ export interface PhotoshopDetail {
   release(path: string): Promise<void>;
 }
 export interface PreparedPreview { info: FileInfo; previewPath?: string; exportPath?: string; documentPath?: string; detail?: PhotoshopDetail;
+  svgAnimation?: import('../core/svg-animation').SvgAnimation;
   rawJpeg?: { path: string; width: number; height: number };
   originalImage?: 'JPEG' | 'PNG';
   rawOriginalPath?: string; rawAutoPath?: string;
@@ -31,6 +32,7 @@ export interface PreparedPreview { info: FileInfo; previewPath?: string; exportP
   prepareNative?: (isCurrent: () => boolean, progress: (rows: number) => void) => Promise<string>;
   prepareExport?: (isCurrent: () => boolean) => Promise<string> }
 export type PreviewStage = 'metadata' | 'preview' | 'document' | 'raw-engine' | 'raw-metadata' | 'raw-overview' | 'raw-auto' | 'raw-png';
+export { startSvgPlayback } from './svg-player';
 type PreviewCallback = (stage: PreviewStage, overview?: { path: string }, progress?: number) => void;
 
 const fs = () => wx.getFileSystemManager();
@@ -811,6 +813,8 @@ export async function preparePreview(file: ChosenFile, canvas: WechatMiniprogram
       const result = parseSvg(text);
       info.width = result.width; info.height = result.height; info.warnings = result.warnings.slice();
       const sanitizedBytes = utf8ByteLength(result.svg);
+      if (result.animation) info.warnings.push('动态 SVG 的 PNG 保存为第一帧。');
+      if (result.animation && sanitizedBytes > 64 * 1024) info.warnings.push('SVG 动态画面超过播放预算，仅显示第一帧。');
       if (sanitizedBytes > SVG_PREVIEW_BYTES) throw new QuickViewError('SVG_TOO_COMPLEX', 'SVG 安全预览内容超过 512 KiB，请精简图形后再打开。');
       const safePath = await writeOwned(result.svg, 'svg');
       ownedPaths.push(safePath);
@@ -829,7 +833,8 @@ export async function preparePreview(file: ChosenFile, canvas: WechatMiniprogram
         ownedPaths.push(exportPath);
         assertCurrent(token);
         info.exportSupported = true;
-        return { info, previewPath, exportPath, exportSize: { width: result.width, height: result.height } };
+        return { info, previewPath, exportPath, exportSize: { width: result.width, height: result.height },
+          ...(result.animation && sanitizedBytes <= 64 * 1024 ? { svgAnimation: result.animation } : {}) };
       } catch (error) {
         assertCurrent(token);
         info.warnings.push(error instanceof Error ? error.message : '当前设备无法将此 SVG 导出为 PNG。');

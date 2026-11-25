@@ -1,4 +1,4 @@
-import { chooseDesignFile, preparePreview, openAiDocument, sharePdfDocument, savePng, saveNativePng, previewRawJpeg, saveRawJpeg, cleanupPreview, discardGeneratedPng, type ChosenFile, type PhotoshopDetail, type PreparedPreview, type ImportSource } from '../../platform/wechat';
+import { chooseDesignFile, preparePreview, openAiDocument, sharePdfDocument, savePng, saveNativePng, previewRawJpeg, saveRawJpeg, cleanupPreview, discardGeneratedPng, startSvgPlayback, type ChosenFile, type PhotoshopDetail, type PreparedPreview, type ImportSource } from '../../platform/wechat';
 import { LIMITS, QuickViewError } from '../../core/shared';
 import { photoshopViewport, rawPixelZoom, type ViewRect } from './photoshop-viewport';
 
@@ -84,6 +84,11 @@ Page({
     rawJpegSize: '',
     rawJpegInline: false,
     pixelPreview: false,
+    canPlaySvg: false,
+    svgPlaying: false,
+    svgCanvasVisible: false,
+    svgFrameReady: false,
+    svgEnded: false,
     viewportMounted: true,
     detailPath: '',
     detailStyle: '',
@@ -151,6 +156,77 @@ Page({
   detailPending: false,
   detailKey: '',
   pixelSource: undefined as { path: string; width: number; height: number; jobId: number } | undefined,
+  svgAnimation: undefined as PreparedPreview['svgAnimation'],
+  svgPlaybackVersion: 0,
+  svgPlayback: undefined as ReturnType<typeof startSvgPlayback> | undefined,
+
+  stopSvgAnimation() {
+    this.svgPlaybackVersion++;
+    this.svgPlayback?.stop();
+    this.svgPlayback = undefined;
+    if (this.data.svgCanvasVisible) this.setData({ svgPlaying: false, svgCanvasVisible: false, svgFrameReady: false, svgEnded: false });
+  },
+
+  toggleSvgAnimation() {
+    const animation = this.svgAnimation, source = this.previewFrame, jobId = this.jobId;
+    if (!animation || !source || source.path !== this.data.previewPath || !this.data.canPlaySvg
+      || !this.data.hasFile || this.data.busy || this.hidden || this.disposed) return;
+    if (this.data.svgPlaying && !this.svgPlayback) return this.stopSvgAnimation();
+    if (this.svgPlayback) {
+      this.resetPreviewTap();
+      if (this.data.svgPlaying) {
+        this.svgPlayback.pause();
+        this.setData({ svgPlaying: false });
+      } else {
+        this.setData({ svgPlaying: true, svgEnded: false });
+        this.svgPlayback.resume();
+      }
+      return;
+    }
+    const version = ++this.svgPlaybackVersion;
+    const current = () => !this.disposed && !this.hidden && jobId === this.jobId
+      && version === this.svgPlaybackVersion && this.data.svgPlaying;
+    const complete = (failed: boolean) => {
+      if (!current()) return;
+      if (failed) {
+        this.stopSvgAnimation();
+        this.setData({ canPlaySvg: false, errorMessage: '当前微信无法播放此 SVG 动画，已显示第一帧。', errorCode: 'SVG_PLAYBACK_UNAVAILABLE' });
+        wx.showToast({ title: '动画播放失败，已显示第一帧', icon: 'none' });
+      } else this.setData({ svgPlaying: false, svgEnded: true });
+      this.fitPreviewFrame();
+    };
+    this.resetPreviewTap();
+    this.setData({ svgPlaying: true, svgCanvasVisible: true, svgFrameReady: false, svgEnded: false, previewToolsOpen: false }, () => wx.nextTick(() => {
+      if (!current()) return;
+      this.fitPreviewFrame();
+      try {
+        this.createSelectorQuery().select('#svgAnimationCanvas').fields({ node: true, size: true }).exec(results => {
+          if (!current()) return;
+          const target = results[0] as { node?: WechatMiniprogram.Canvas; width?: number; height?: number } | undefined;
+          if (!target?.node || !target.width || !target.height
+            || typeof target.node.requestAnimationFrame !== 'function') return complete(true);
+          const canvas = target.node, density = Math.min(this.getPixelRatio(), LIMITS.canvasSide / Math.max(target.width, target.height));
+          canvas.width = Math.max(1, Math.round(target.width * density));
+          canvas.height = Math.max(1, Math.round(target.height * density));
+          try {
+            const player = startSvgPlayback(animation, canvas, source, current, complete, () => {
+              if (current()) this.setData({ svgFrameReady: true });
+            });
+            if (current()) this.svgPlayback = player;
+            else player.stop();
+          } catch { complete(true); }
+        });
+      } catch { complete(true); }
+    }));
+  },
+
+  replaySvgAnimation() {
+    if (this.disposed || this.hidden || this.data.busy) return;
+    if (!this.svgPlayback) return this.toggleSvgAnimation();
+    this.resetPreviewTap();
+    this.setData({ svgPlaying: true, svgEnded: false });
+    this.svgPlayback.restart();
+  },
 
   onLoad() {
     this.getPixelRatio();
@@ -270,6 +346,8 @@ Page({
   handleMemoryWarning() {
     if (this.disposed || !this.data.hasFile) return Promise.resolve();
     if (this.memoryRecovery) return this.memoryRecovery;
+    this.stopSvgAnimation();
+    if (this.data.canPlaySvg) this.setData({ canPlaySvg: false });
     const jobId = this.jobId;
     this.detailSuspended = true;
     this.detailVersion++;
@@ -373,6 +451,7 @@ Page({
   },
 
   onHide() {
+    this.stopSvgAnimation();
     this.hidden = true;
     this.frameVersion++;
     this.resetPreviewTap();
@@ -389,6 +468,8 @@ Page({
   },
 
   onUnload() {
+    this.stopSvgAnimation();
+    this.svgAnimation = undefined;
     this.disposed = true;
     this.frameVersion++;
     this.previewFrame = undefined;
@@ -454,6 +535,8 @@ Page({
     try {
       const file = fromPicker ? await chooseDesignFile(input) : input;
       if (this.disposed || jobId !== this.jobId) return;
+      this.stopSvgAnimation();
+      this.svgAnimation = undefined;
       this.setData({ busyText: '正在准备文件…' });
       // A cancelled prepare can still own the shared native Canvas until its I/O settles.
       const previousTasks = [this.prepareTask, this.exportTask, this.nativeTask];
@@ -472,7 +555,7 @@ Page({
       this.resetViewportZoom();
       await new Promise<void>(resolve => this.setData({ hasFile: true, previewBackSessions: [jobId], filename: file.name, filesize: file.size > 0 ? sizeLabel(file.size) : '',
         format: '', dimensions: '', colorInfo: '', fileFacts: [], previewPath: '', stageStyle: '', originalImage: '', rawAutoAvailable: false, rawAutoEnabled: false, canRawJpeg: false, canViewRawJpeg: false, rawJpegSize: '', rawJpegInline: false, pixelPreview: false, viewportMounted: true, isDocument: false, canShareDocument: false,
-        canSave: false, previewAtOriginalSize: false, exportMode: '', canNative: false, nativeState: 'IDLE', nativeProgress: 0,
+        canSave: false, canPlaySvg: false, previewAtOriginalSize: false, exportMode: '', canNative: false, nativeState: 'IDLE', nativeProgress: 0,
         warnings: [], importantWarnings: [], previewDetailsOpen: false, previewToolsOpen: false, memoryNotice: '', busyText: '正在本地解析…', busyHint: '正在生成设计稿预览',
         zoom: 1, zoomCommand: 1, zoomLabel: '100%' }, () => wx.nextTick(resolve)));
       if (this.disposed || jobId !== this.jobId) return;
@@ -517,6 +600,7 @@ Page({
       const previewAtOriginalSize = canSaveToAlbum && info.format !== 'RAW' && !!preview.exportSize
         && preview.exportSize.width === info.width && preview.exportSize.height === info.height;
       this.detail = preview.detail;
+      this.svgAnimation = preview.svgAnimation;
       this.exportPath = preview.exportPath || '';
       this.prepareExport = preview.prepareExport;
       this.prepareNative = preview.prepareNative;
@@ -545,7 +629,7 @@ Page({
         canSave: info.exportSupported && !!preview.exportPath && (info.format !== 'RAW' || !!preview.exportSize && canSaveToAlbum),
         warnings: info.warnings, importantWarnings: previewRisks(info.warnings),
         originalImage: preview.originalImage || '',
-        canNative, previewAtOriginalSize,
+        canNative, previewAtOriginalSize, canPlaySvg: !!preview.svgAnimation,
         busyText: preview.documentPath ? '正在打开文档…' : '' }, () => {
           const frame = this.rawInlinePath ? preview.rawJpeg : info;
           this.setPreviewFrame(this.data.previewPath, frame?.width, frame?.height);
@@ -702,6 +786,8 @@ Page({
   },
 
   backToHome() {
+    this.stopSvgAnimation();
+    this.svgAnimation = undefined;
     this.previewFrame = undefined; this.frameVersion++;
     this.resetViewportZoom();
     this.detailSuspended = false;
@@ -720,7 +806,7 @@ Page({
     this.pixelSource = undefined;
     this.setData({ hasFile: false, previewBackSessions: [], rawAutoAvailable: false, rawAutoEnabled: false, busy: false, busyText: '', busyHint: '', exportMode: '', filename: '', filesize: '',
       format: '', dimensions: '', colorInfo: '', fileFacts: [], previewPath: '', stageStyle: '', originalImage: '', canRawJpeg: false, canViewRawJpeg: false, rawJpegSize: '', rawJpegInline: false, pixelPreview: false, viewportMounted: true, isDocument: false, canShareDocument: false,
-      canSave: false, previewAtOriginalSize: false, canNative: false, nativeState: 'IDLE', nativeProgress: 0,
+      canSave: false, canPlaySvg: false, previewAtOriginalSize: false, canNative: false, nativeState: 'IDLE', nativeProgress: 0,
       errorMessage: '', errorCode: '', pickerDiagnostic: '', canRetryChatFile: false, canRestartPicker: false, memoryNotice: '', warnings: [], importantWarnings: [], previewDetailsOpen: false, previewToolsOpen: false,
       zoom: 1, zoomCommand: 1, zoomLabel: '100%' });
     this.updateScreenAwake();
@@ -956,6 +1042,7 @@ Page({
   keepExportOpen() {},
 
   fitToScreen() {
+    this.stopSvgAnimation();
     const jobId = this.jobId;
     this.resetViewportZoom();
     // Native gesture coordinates are readback only; remount to reset native pan reliably.
@@ -1020,7 +1107,7 @@ Page({
   resetPreviewTap() { this.tapStart = undefined; this.lastTap = undefined; this.tapVersion++; },
 
   onPreviewTouchStart(event: PreviewTouchEvent, canvas = false) {
-    if (canvas !== this.data.pixelPreview) return;
+    if (canvas !== (this.data.pixelPreview || this.data.svgCanvasVisible)) return;
     this.tapVersion++; this.tapStart = undefined;
     const point = event.touches.length === 1 ? previewPoint(event.touches[0]) : undefined;
     if (!point || !Number.isFinite(event.timeStamp) || this.disposed || this.hidden || this.data.busy
@@ -1031,14 +1118,14 @@ Page({
   },
 
   onPreviewTouchMove(event: PreviewTouchEvent, canvas = false) {
-    if (canvas !== this.data.pixelPreview) return;
+    if (canvas !== (this.data.pixelPreview || this.data.svgCanvasVisible)) return;
     const point = event.touches.length === 1 ? previewPoint(event.touches[0]) : undefined, start = this.tapStart;
     if (!point || !start || start.canvas !== canvas || point.identifier !== start.identifier || point.space !== start.space
       || Math.hypot(point.x - start.x, point.y - start.y) > 8) this.resetPreviewTap();
   },
 
   onPreviewTouchEnd(event: PreviewTouchEvent, canvas = false) {
-    if (canvas !== this.data.pixelPreview) return;
+    if (canvas !== (this.data.pixelPreview || this.data.svgCanvasVisible)) return;
     this.settleZoom();
     const start = this.tapStart;
     this.tapStart = undefined;
@@ -1056,7 +1143,7 @@ Page({
   },
 
   onPreviewTouchCancel(event: PreviewTouchEvent, canvas = false) {
-    if (canvas !== this.data.pixelPreview) return;
+    if (canvas !== (this.data.pixelPreview || this.data.svgCanvasVisible)) return;
     this.resetPreviewTap(); this.settleZoom();
   },
   onPixelTouchStart(event: WechatMiniprogram.TouchCanvas) { this.onPreviewTouchStart(event, true); },
@@ -1090,6 +1177,7 @@ Page({
   },
 
   onResize() {
+    this.stopSvgAnimation();
     this.resetPreviewTap(); this.pixelRatio = undefined; this.scheduleDetail();
     this.fitPreviewFrame();
     if (this.data.previewToolsOpen) this.setData({ previewToolsOpen: false });

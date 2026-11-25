@@ -1,5 +1,6 @@
 import { SaxesParser } from 'saxes';
 import { checkImageBudget, LIMITS, QuickViewError, utf8ByteLength } from './shared';
+import { svgAnimationTrack, type SvgAnimation, type SvgAnimationTrack } from './svg-animation';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
@@ -33,6 +34,7 @@ export interface SvgPreview {
   height: number;
   svg: string;
   warnings: string[];
+  animation?: SvgAnimation;
 }
 
 function reject(message: string, code = 'SVG_UNSUPPORTED'): never {
@@ -130,6 +132,9 @@ function escapeXml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+const svgTag = (name: string, attrs: Record<string, string>): string =>
+  '<' + name + Object.entries(attrs).map(([key, value]) => ' ' + key + '="' + escapeXml(value) + '"').join('') + '>';
+
 /** Strict XML parsing plus an SVG shape allowlist; input is never passed through. */
 export function parseSvg(text: string): SvgPreview {
   if (text.length > LIMITS.svgBytes) reject('SVG 文件超过 1 MiB 本地处理上限。', 'SVG_LIMIT');
@@ -138,6 +143,9 @@ export function parseSvg(text: string): SvgPreview {
   const parser = new SaxesParser({ xmlns: true, defaultXMLVersion: '1.0', forceXMLVersion: true });
   const output: string[] = [];
   const stack: string[] = [];
+  const elements: { name: string; attrs: Record<string, string>; chunk: number }[] = [];
+  const tracks: { element: typeof elements[number]; track: SvgAnimationTrack }[] = [];
+  let animationBytes = 0;
   let width = 0;
   let height = 0;
   let nodes = 0;
@@ -152,6 +160,23 @@ export function parseSvg(text: string): SvgPreview {
     const name = tag.local;
     const root = nodes === 0;
     if (++nodes > 10000 || stack.length >= 32) reject('SVG 节点数量或嵌套深度超过上限。', 'SVG_LIMIT');
+    if (name === 'animate' || name === 'animateTransform') {
+      const element = elements[elements.length - 1];
+      if (root || tag.prefix || tag.uri !== namespace || !element
+        || stack[stack.length - 1] !== element.name || tracks.length >= 32) reject('SVG 动画结构或数量超出支持范围。');
+      const attrs: Record<string, string> = Object.create(null);
+      for (const attr of Object.values(tag.attributes)) {
+        if (attr.prefix || attr.uri || attr.value.length > 65536) reject('SVG 动画属性无效。', 'SVG_UNSAFE');
+        attrs[attr.local] = attr.value.trim();
+        animationBytes += attr.value.length;
+      }
+      if (animationBytes > 128 * 1024) reject('SVG 动画数据超过上限。', 'SVG_LIMIT');
+      const track = svgAnimationTrack(name, attrs, element.name, element.attrs, path);
+      if (tracks.some(item => item.element === element && item.track.attribute === track.attribute)) reject('SVG 同一属性的叠加动画超出支持范围。');
+      tracks.push({ element, track });
+      stack.push(name);
+      return;
+    }
     if (root) {
       if (name !== 'svg' || tag.prefix) reject('文件根节点必须为 SVG。', 'SVG_INVALID');
       namespace = tag.uri;
@@ -234,11 +259,16 @@ export function parseSvg(text: string): SvgPreview {
       attrs.preserveAspectRatio ||= 'xMidYMid meet';
       attrs.xmlns = SVG_NS;
     }
-    const serialized = Object.entries(attrs).map(([key, value]) => ` ${key}="${escapeXml(value)}"`).join('');
-    output.push(`<${name}${serialized}>`);
+    elements.push({ name, attrs, chunk: output.length });
+    output.push(svgTag(name, attrs));
     stack.push(name);
   });
-  parser.on('closetag', () => { output.push(`</${stack.pop()}>`); });
+  parser.on('closetag', () => {
+    const name = stack.pop();
+    if (name === 'animate' || name === 'animateTransform') return;
+    elements.pop();
+    output.push(`</${name}>`);
+  });
   parser.on('text', value => {
     if (['title', 'desc'].includes(stack[stack.length - 1])) {
       metadataLength += value.length;
@@ -248,5 +278,21 @@ export function parseSvg(text: string): SvgPreview {
   });
   parser.write(text).close();
   if (!nodes || !width || !height || stack.length) reject('SVG 文件为空或不完整。', 'SVG_INVALID');
-  return { kind: 'svg', format: 'SVG', width, height, svg: output.join(''), warnings: [] };
+  const animation: SvgAnimation | undefined = tracks.length ? {
+    duration: Math.max(...tracks.map(({ track }) => track.duration)),
+    frame(seconds) {
+      const chunks = output.slice();
+      const changes = new Map<typeof elements[number], Record<string, string>>();
+      for (const { element, track } of tracks) {
+        let attrs = changes.get(element);
+        if (!attrs) { attrs = { ...element.attrs }; changes.set(element, attrs); }
+        const value = track.value(seconds);
+        if (value !== undefined) attrs[track.attribute] = value;
+      }
+      for (const [element, attrs] of changes) chunks[element.chunk] = svgTag(element.name, attrs);
+      return chunks.join('');
+    },
+  } : undefined;
+  return { kind: 'svg', format: 'SVG', width, height, svg: animation ? animation.frame(0) : output.join(''),
+    warnings: [], ...(animation ? { animation } : {}) };
 }

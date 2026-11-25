@@ -62,6 +62,13 @@ button[disabled] { opacity: .45; }
 .preview-body { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: flex-start; }
 .stage { flex: 1; height: 0; min-height: 0; box-sizing: border-box; overflow: hidden; position: relative; border: 1rpx solid #e2e7e8; border-radius: 20rpx; background-color: #fff; background-image: linear-gradient(45deg, #edf0f2 25%, transparent 25%), linear-gradient(-45deg, #edf0f2 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #edf0f2 75%), linear-gradient(-45deg, transparent 75%, #edf0f2 75%); background-size: 32rpx 32rpx; background-position: 0 0, 0 16rpx, 16rpx -16rpx, -16rpx 0; }
 .preview-area, .preview-image-wrap, .preview-image { width: 100%; height: 100%; }
+.svg-animation-canvas { position: absolute; top: 0; left: 0; }
+.svg-animation-pending { opacity: 0; }
+.svg-playback-controls { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; flex: 0 0 44px; height: 44px; min-width: 0; margin-top: 8px; }
+.svg-playback-controls .svg-playback-button { display: flex; align-items: center; justify-content: center; gap: 6px; box-sizing: border-box; flex: 0 0 84px; width: 84px; max-width: 84px; min-width: 84px; height: 44px; min-height: 44px; margin: 0; padding: 0 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--control); font-size: 13px; font-weight: 600; line-height: 20px; white-space: nowrap; }
+.svg-playback-controls .svg-playback-primary { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.svg-playback-controls .svg-playback-icon { font-size: 16px; line-height: 1; }
+.svg-playback-controls .svg-playback-hint { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; font-size: 12px; color: var(--muted); }
 .stage.preview-background-white { background: #fff; }
 .stage.preview-background-black { background: #111; }
 .detail-image { position: absolute; pointer-events: none; }
