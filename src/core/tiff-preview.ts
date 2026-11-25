@@ -6,6 +6,10 @@ import { ICC_MAX_BYTES, inspectTiffIcc, type IccColor } from './icc';
 
 type Read = (offset: number, length: number) => Promise<Uint8Array>;
 const invalid = () => new QuickViewError('INVALID_TIFF', 'TIFF 区段或条带数据无效，已停止读取。');
+export const TIFF_RANGE_TAG_LIMITS: ReadonlyMap<number, number> = new Map([[256, 1], [257, 1], [258, 8],
+  [259, 1], [262, 1], [266, 1], [273, 4096], [274, 1], [277, 1], [278, 1], [279, 4096], [284, 1], [317, 1],
+  [338, 7], [339, 8]]);
+export interface TiffRangeMetadata { ifd: TiffIfd; little: boolean; morePages: boolean; color: IccColor }
 const numbers = (ifd: TiffIfd, tag: number): number[] => {
   const value = ifd.get(tag);
   return typeof value === 'number' ? [value] : Array.from((value ?? []) as ArrayLike<number>);
@@ -14,7 +18,7 @@ const numbers = (ifd: TiffIfd, tag: number): number[] => {
 // Repack only bounded numeric first-page tags for the existing TIFF library.
 // Pixel offsets still point into the original file. No EXIF, layers or next IFD
 // are followed, and no allocation depends on the full source file size.
-export async function inspectTiffFile(read: Read, size: number): Promise<{ ifd: TiffIfd; little: boolean; morePages: boolean; color: IccColor }> {
+export async function inspectTiffFile(read: Read, size: number): Promise<TiffRangeMetadata> {
   const exact = async (offset: number, length: number) => {
     if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 1 || length > 65536 || offset > size - length) throw invalid();
     const bytes = await read(offset, length);
@@ -37,13 +41,11 @@ export async function inspectTiffFile(read: Read, size: number): Promise<{ ifd: 
   const target = new DataView(compact.buffer);
   target.setUint32(4, 8, little);
   target.setUint32(8 + 2 + count * 12, 0, little);
-  const limits = new Map([[256, 1], [257, 1], [258, 8], [259, 1], [262, 1], [266, 1],
-    [273, 4096], [274, 1], [277, 1], [278, 1], [279, 4096], [284, 1], [317, 1], [338, 7], [339, 8]]);
   const seen = new Set<number>();
   let profile: Uint8Array | undefined;
   let used = 8 + directory.length;
   for (let pos = 2; pos < 2 + count * 12; pos += 12) {
-    const tag = source.getUint16(pos, little), max = limits.get(tag);
+    const tag = source.getUint16(pos, little), max = TIFF_RANGE_TAG_LIMITS.get(tag);
     if (tag === 34675) {
       const type = source.getUint16(pos + 2, little), length = source.getUint32(pos + 4, little), start = source.getUint32(pos + 8, little);
       if (seen.has(tag) || type !== 7 || length < 132 || length > ICC_MAX_BYTES || start < 8 || start > size - length) {

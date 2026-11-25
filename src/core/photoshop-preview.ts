@@ -53,7 +53,7 @@ function unpackRow(encoded: Uint8Array, row: Uint8Array): void {
  * PSD/PSB layout: https://www.adobe.com/devnet-apps/photoshop/fileformatashtml/
  */
 export async function openPhotoshopComposite(read: RangeReader, fileSize: number, header: PhotoshopHeader,
-  capabilities: { rgb16Raw?: boolean; rgb16RawBatchRows?: 1 | 8 | 16 | 32 } = {}): Promise<CompositeSession> {
+  capabilities: { rgb16Raw?: boolean; rgb16RawBatchRows?: 1 | 8 | 16 | 32; cropRaw8?: boolean } = {}): Promise<CompositeSession> {
   if (!Number.isSafeInteger(fileSize) || fileSize < 26) invalid('Photoshop 文件大小无效。');
   const sourceWidth = header.width;
   const sourceHeight = header.height;
@@ -305,9 +305,10 @@ export async function openPhotoshopComposite(read: RangeReader, fileSize: number
       // Only two full single-channel rows live per invocation; no row/result cache
       // survives a viewport request. A protected slot prevents eviction of row A
       // while loading row B for the same output scanline.
-      // Raw16 can also crop columns at read time; RGB8/RLE retain their verified row path.
-      const rowStart = rgb16 ? area ? Math.floor(left) : xFirst[0] : 0;
-      const rowWidth = rgb16 ? (area ? Math.ceil(right) : xSecond[width - 1] + 1) - rowStart : sourceWidth;
+      // Raw data can crop columns at read time. RLE requires complete scanlines.
+      const crop = rgb16 || (capabilities.cropRaw8 && !rowOffsets && !options.overview);
+      const rowStart = crop ? area ? Math.floor(left) : xFirst[0] : 0;
+      const rowWidth = crop ? (area ? Math.ceil(right) : xSecond[width - 1] + 1) - rowStart : sourceWidth;
       const rowBytes = rowWidth * sampleBytes;
       const rows = [new Uint8Array(rowBytes), new Uint8Array(rowBytes)];
       // A single request-local batch may include the unused columns between rows.
@@ -348,7 +349,7 @@ export async function openPhotoshopComposite(read: RangeReader, fileSize: number
         return slot;
       };
       const sample = (row: Uint8Array, x: number): number => {
-        if (!rgb16) return row[x];
+        if (!rgb16) return row[x - rowStart];
         const at = (x - rowStart) * 2;
         const value = (row[at] << 8) | row[at + 1];
         return precise || area ? value / 65535 * 255 : value >>> 8;

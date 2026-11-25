@@ -8,7 +8,8 @@
   "scripts": {
     "check": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "build": "node tools/build.mjs"
+    "build": "node tools/build.mjs",
+    "build:android-core": "node tools/build-android-core.mjs"
   },
   "dependencies": {
     "ag-psd": "31.0.3",

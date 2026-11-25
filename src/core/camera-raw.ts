@@ -137,15 +137,18 @@ export async function readCameraRawPreview(read: (offset: number, length: number
   return { ...(overview || best), highest: best, overviewSafe: !!overview, directories };
 }
 
-function jpegDirectionField(jpeg: Uint8Array): { at: number; little: boolean; direction: number } | undefined {
+function jpegDirectionField(jpeg: Uint8Array, detectMalformed = false):
+  { at: number; little: boolean; direction: number } | null | undefined {
   let at = 2;
   while (at + 4 < jpeg.length) {
     if (jpeg[at++] !== 255) return;
     while (jpeg[at] === 255) at++;
-    const marker = jpeg[at++]; if (marker === 218 || marker === 217) return;
+    const marker = jpeg[at++]; if (marker === 218 || marker === 217) return null;
     if (marker === 1) continue;
     const n = view(jpeg).getUint16(at); if (n < 2 || n > jpeg.length - at) return;
-    if (marker === 225 && n >= 16 && String.fromCharCode(...jpeg.subarray(at + 2, at + 8)) === 'Exif\0\0') {
+    if (marker === 225 && n >= (detectMalformed ? 8 : 16)
+      && String.fromCharCode(...jpeg.subarray(at + 2, at + 8)) === 'Exif\0\0') {
+      if (n < 16) return;
       const bytes = jpeg.subarray(at + 8, at + n), data = view(bytes);
       const little = bytes[0] === 73 && bytes[1] === 73;
       if ((!little && !(bytes[0] === 77 && bytes[1] === 77)) || data.getUint16(2, little) !== 42) return;
@@ -155,10 +158,13 @@ function jpegDirectionField(jpeg: Uint8Array): { at: number; little: boolean; di
       if (count > 512 || count * 12 > bytes.length - offset - 2) return;
       for (let i = 0; i < count; i++) {
         const entry = offset + 2 + i * 12;
-        if (data.getUint16(entry, little) === 274 && data.getUint16(entry + 2, little) === 3 && data.getUint32(entry + 4, little) === 1) {
-          const direction = data.getUint16(entry + 8, little);
-          return direction >= 1 && direction <= 8 ? { at: at + 8 + entry + 8, little, direction } : undefined;
+        if (data.getUint16(entry, little) !== 274) continue;
+        if (data.getUint16(entry + 2, little) !== 3 || data.getUint32(entry + 4, little) !== 1) {
+          if (detectMalformed) return;
+          continue;
         }
+        const direction = data.getUint16(entry + 8, little);
+        return direction >= 1 && direction <= 8 ? { at: at + 8 + entry + 8, little, direction } : undefined;
       }
     }
     at += n;
@@ -169,10 +175,14 @@ function jpegDirectionField(jpeg: Uint8Array): { at: number; little: boolean; di
  * Patch a valid existing EXIF orientation, otherwise write a canonical orientation block;
  * keep ICC/other segments and compressed scan bytes without changing the source buffer.
  */
-export function rawPreviewJpeg(jpeg: Uint8Array, orientation: number): Uint8Array {
+export function rawPreviewJpeg(jpeg: Uint8Array, orientation: number,
+  options: { preserveUpright?: boolean } = {}): Uint8Array {
   checkJpegHeader(jpeg);
   if (!Number.isInteger(orientation) || orientation < 1 || orientation > 8) throw invalid();
-  const field = jpegDirectionField(jpeg);
+  const field = jpegDirectionField(jpeg, options.preserveUpright);
+  // An upright JPEG with no orientation tag already displays correctly. A malformed
+  // EXIF block is different from an absent tag and still gets a canonical replacement.
+  if (options.preserveUpright && (field?.direction === orientation || field === null && orientation === 1)) return jpeg;
   if (field) {
     // Preserve existing EXIF color information and all other bytes when only
     // the orientation needs patching. No source buffer or scan data is changed.

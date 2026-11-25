@@ -28,4 +28,5 @@ jobs:
       - run: pnpm check
       # Platform tests import the generated Mini Program bundle.
       - run: pnpm build
+      - run: pnpm build:android-core
       - run: pnpm test

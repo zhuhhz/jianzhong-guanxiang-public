@@ -9,5 +9,6 @@ declare module 'tiff' {
     data: Uint8Array | Uint16Array;
     get(tag: number): unknown;
   }
+  export const TiffIfd: new () => TiffIfd & { fields: Map<number, number | number[]> };
   export function decode(data: ArrayBuffer, options: { pages: number[]; ignoreImageData?: boolean }): TiffIfd[];
 }

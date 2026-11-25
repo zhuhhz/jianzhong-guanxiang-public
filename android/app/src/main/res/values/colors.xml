@@ -1,0 +1,18 @@
+<resources>
+    <!-- Exact palette from src/pages/index/index.wxss. -->
+    <color name="ink_bg">#f6f7f9</color><color name="ink_text">#182a39</color>
+    <color name="ink_muted">#62737c</color><color name="ink_border">#e7ecee</color>
+    <color name="ink_accent">#193e48</color><color name="ink_control">#486d6b</color>
+    <color name="ink_on_accent">#ffffff</color><color name="ink_light">#ffffff</color><color name="ink_dark">#cbd3dc</color>
+    <color name="ink_error_bg">#fbece7</color><color name="ink_error_text">#a7543c</color>
+    <color name="paper_bg">#faf6ee</color><color name="paper_text">#3d3127</color>
+    <color name="paper_muted">#796651</color><color name="paper_border">#e4d9c8</color>
+    <color name="paper_accent">#70543b</color><color name="paper_control">#775c43</color>
+    <color name="paper_on_accent">#fffdf8</color><color name="paper_light">#fffdf8</color><color name="paper_dark">#d8ccba</color>
+    <color name="paper_error_bg">#fae8df</color><color name="paper_error_text">#9c4e35</color>
+    <color name="night_bg">#171e24</color><color name="night_text">#edf2f4</color>
+    <color name="night_muted">#a9b7c1</color><color name="night_border">#303d47</color>
+    <color name="night_accent">#99d4bf</color><color name="night_control">#addbcf</color>
+    <color name="night_on_accent">#132b23</color><color name="night_light">#2a3742</color><color name="night_dark">#080d11</color>
+    <color name="night_error_bg">#492c2c</color><color name="night_error_text">#ffc0ae</color>
+</resources>
